@@ -53,6 +53,12 @@ class AdditionalModel(unittest.TestCase):
         self.assertEqual(set(names), {"strata-q2_0.json", "strata-swift-iq2_xs.json"})
         self.assertIn("swift", cfg["model_name"])
 
+    def test_adds_sc117_swift_without_replacing_qwen_settings(self):
+        (code, out, cfg, _), names = self.add_model(["--family", "swift-abliterated", "--model", "IQ2_XS"])
+        self.assertEqual(code, 0, out)
+        self.assertEqual(set(names), {"strata-q2_0.json", "strata-swift-abliterated-iq2_xs.json"})
+        self.assertEqual(cfg["model_name"], "swift-1.5-abliterated-iq2_xs")
+
     @unittest.skipUnless(os.name == "nt", "Windows batch execution")
     def test_batch_dispatches_install_only_and_preserves_exit_code(self):
         with tempfile.TemporaryDirectory(prefix="Strata 追加 ") as folder:

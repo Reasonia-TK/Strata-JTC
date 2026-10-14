@@ -122,6 +122,20 @@ More: [details](DETAILS.md#or-swift-15-a-fine-tune-that-thinks-shorter).
 START-HERE.bat --setup --family swift --model IQ2_XS
 ```
 
+### SC117版Swift 1.5 Abliterated
+
+[配布元](https://huggingface.co/SC117/Swift-1.5-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-GGUF)の
+`Q2_0`、`IQ2_XS`、`IQ3_XXS`、`IQ3_S`を、`--family swift-abliterated`で追加できます。
+StrataのQwen用エンジンとネイティブパックを使い、通常のSwiftとは別のモデル設定・パックを作ります。
+PLEテーブルは先頭の分割ファイルにあります。分割をまたぐレイヤーも現在のパック処理で扱います。
+モデル本体の全量取得や推論はこのPCで未確認です。
+[容量、追加と起動の手順](../README.md#sc117版swift-15-abliteratedを追加する)を参照してください。
+
+```powershell
+.\ADD-MODEL.bat --family swift-abliterated --model IQ2_XS
+.\RUN-STRATA.bat --model swift-abliterated-iq2_xs
+```
+
 <a id="unsloth-ud-iq4_xs"></a><a id="unsloth-ud-q4_k_xl-experimental"></a>
 
 ### Unsloth's files: UD-IQ4_XS to Q8_0

@@ -65,6 +65,7 @@ from glm_models import (
 
 ROOT = Path(__file__).resolve().parent
 WIN = os.name == "nt"
+SWIFT_ABLITERATED = json.loads((ROOT / "data" / "swift15-abliterated.json").read_text(encoding="utf-8"))
 # #214: every Hugging Face file comes from a fixed commit of its repository (the `sha` of
 # https://huggingface.co/api/models/<repo> when this was pinned), so a checkout installs the same files on any
 # day.  A revision the repository no longer has falls back to its current files, with a message (download()).
@@ -74,6 +75,7 @@ HF_REVISIONS = {
     "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-Coder-GGUF": "5348543e0147355ac9cbcb031184a3546350988e",  # 2026-09-29
     "unsloth/Qwen3.8-Flash-Next-GGUF": "38bb39ee97821de2c9009abb7e93950eec396e66",                   # 2026-09-30
     "unsloth/Qwen3.6-35B-A3B-MTP-GGUF": "5bc3e238d916f48a861bac2f8a1990a0e9b7e98d",                  # 2026-10-12
+    SWIFT_ABLITERATED["repo"]: SWIFT_ABLITERATED["revision"],
 }
 
 
@@ -425,6 +427,24 @@ FAMILIES = {
               "tag": "nvfp4-", "name": "qwen3.8-flash-next-nvfp4", "ready": True,
               "mmproj_hf": hf("ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF"), "mmproj": "mmproj-Qwen3.8-Flash-Next-BF16.gguf",
               "mmproj_sha256": (907543008, "b1a82259702816a5330d7bd7607cd9676b11780e79ff7348c21103ff3ce49bd0")},
+    "swift-abliterated": {
+        "title": "Swift 1.5 Abliterated", "by": "SC117によるSwift 1.5の派生モデル",
+        "about": "Q2_0、IQ2_XS、IQ3_XXS、IQ3_Sから量子化を選択",
+        "hf": hf(SWIFT_ABLITERATED["repo"]),
+        # IQ3_Sだけリポジトリー直下にあり、ほかの量子化は各サブフォルダーにある。
+        "hf_by_model": {q: hf(SWIFT_ABLITERATED["repo"]) + (f"{q}/" if q != "IQ3_S" else "")
+                        for q in SWIFT_ABLITERATED["models"]},
+        "file": "Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-{q}-0000{i}-of-00002.gguf",
+        "models": tuple(SWIFT_ABLITERATED["models"]), "tag": "swift-abliterated-", "name": "swift-1.5-abliterated",
+        "download_gb": {q: m["size"] / 1e9 for q, m in SWIFT_ABLITERATED["models"].items()},
+        "sha256": {Path(f["path"]).name: (f["size"], f["sha256"])
+                   for m in SWIFT_ABLITERATED["models"].values() for f in m["files"]},
+        "mmproj_hf": hf(SWIFT_ABLITERATED["repo"]), "mmproj": SWIFT_ABLITERATED["mmproj"]["path"],
+        # 同名のQwen用エンコーダーとメタデータ・ハッシュが異なるので、保存先を分ける。
+        "mmproj_dir": "swift-abliterated",
+        "mmproj_sha256": (SWIFT_ABLITERATED["mmproj"]["size"], SWIFT_ABLITERATED["mmproj"]["sha256"]),
+        "license": "Swift Open License 1.0: https://huggingface.co/SC117/Swift-1.5-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-GGUF",
+    },
 }
 MMPROJ = "mmproj-Qwen3.8-Flash-Next-BF16.gguf"
 # Qwen3.6-35B-A3B (GGUF architecture qwen35moe), Unsloth's GGUFs with the MTP block: a family with an engine path of its
@@ -1349,6 +1369,17 @@ def split_mmap(cfg: dict) -> bool:
     return True
 
 
+def family_models(family: str) -> list[str]:
+    """ファミリー独自の量子化一覧、または従来のモデル対応表。"""
+    return list(FAMILIES[family]["models"]) if "models" in FAMILIES[family] else [
+        m for m in MODELS if family in MODELS[m].get("families", ("qwen", "swift"))]
+
+
+def model_download_gb(fam: dict, model: str) -> float:
+    """ファミリー独自の容量、または従来のモデルの目安。"""
+    return fam.get("download_gb", {}).get(model, MODELS[model]["download_gb"])
+
+
 def model_file(fam: dict, model: str, i: int) -> str:
     """Shard i's file name: the family's pattern, or the model's own (#621: UD-IQ4_XS has three shards, not four)."""
     return MODELS.get(model, {}).get("file", fam["file"]).format(q=model, i=i)
@@ -1844,7 +1875,7 @@ def gguf_choice(name: str) -> tuple | None:
         if d.get("ready"):                             # ready-made packs (NVFP4): no GGUF shards to match
             continue
         for m in MODELS:
-            if f in MODELS[m].get("families", ("qwen", "swift")) and name == model_file(d, m, 1):
+            if m in family_models(f) and name == model_file(d, m, 1):
                 return f, m
     return None
 
@@ -4667,7 +4698,9 @@ def choices_from_config(cfg_path: Path) -> dict:
                 "vision": "none", "esp": "off", "host": cfg.get("host"), "api_key": cfg.get("api_key"),
                 "port": cfg.get("port"), "gpu": cfg.get("gpu"), "layer_split": None,
                 "cuda": 12 if config_toolkit(cfg) == 12 else None, "vram_reserve_mib": None}
-    family = next((f for f, d in FAMILIES.items() if d["tag"] and tag.startswith(d["tag"])), "qwen")
+    # swift-abliterated-をswift-と取り違えないよう、一番長く一致するタグを優先する。
+    family = max((f for f, d in FAMILIES.items() if d["tag"] and tag.startswith(d["tag"])),
+                 key=lambda f: len(FAMILIES[f]["tag"]), default="qwen")
     model = (tag[len(FAMILIES[family]["tag"]):] if tag.startswith(FAMILIES[family]["tag"]) else tag).upper()
     if model not in MODELS:                            # (sizes have no dash except UD-Q4_K_XL: the old rule)
         model = tag.split("-")[-1].upper()
@@ -5826,7 +5859,7 @@ def main() -> int:
     from serve.llama_runtime import gpu_layers_value
     ap.add_argument("--family", choices=list(FAMILIES) + list(PREVIEW_FAMILIES) + [GLM_FAMILY],
                     help="qwen = Qwen3.8-Flash-Next、swift = Swift 1.5、qwen36 = Qwen3.6-35B-A3B、"
-                         "glm53 = GLM-5.3-Flash（専用llama.cppエンジン）")
+                         "swift-abliterated = SC117版Swift 1.5、glm53 = GLM-5.3-Flash（専用llama.cppエンジン）")
     ap.add_argument("--model", choices=list(dict.fromkeys([*MODELS, *(m for f in PREVIEW_FAMILIES.values()
                                                                        for m in f["models"]), *GLM_QUANTS])))
     ap.add_argument("--llama-backend", choices=["auto", "cuda", "vulkan", "cpu"], default="auto",
@@ -6297,18 +6330,18 @@ def main() -> int:
     if fam.get("license"):
         say(f"  Its license: {fam['license']}")
     say()
-    names = [m for m in MODELS if family in MODELS[m].get("families", ("qwen", "swift"))]
+    names = family_models(family)
     names.sort(key=lambda m: bool(MODELS[m].get("experimental")))   # an experimental size last, never the default
     if a.model and a.model not in names:
         # #444: say which family has that size, and (with --gguf-dir) which files Strata can run at all
-        elsewhere_fams = [f for f in FAMILIES if f in MODELS[a.model].get("families", ("qwen", "swift"))]
+        elsewhere_fams = [f for f in FAMILIES if a.model in family_models(f)]
         fail(f"{fam['title']} has no {a.model} model file", "choose one of: " + ", ".join(names)
              + (f" (or {a.model}: " + ", ".join(f"--family {f} --model {a.model}" for f in elsewhere_fams) + ")"
                 if elsewhere_fams else "")
              + (f".\n       {SUPPORTED_GGUFS}" if a.gguf_dir else ""))
     installed = installed_size(family, names, have)
     for i, m in enumerate(names, 1):
-        d = MODELS[m]
+        d = dict(MODELS[m], download_gb=model_download_gb(fam, m))
         fit = "" if ram >= d["ram_gb"] else f"   <- needs {d['ram_gb']} GB RAM, you have {ram:.0f}"
         if d.get("budget"):
             keeps = (f"~{resident_budget_gib(m, ram)} GB" if unsloth_budget(m, ram, gpu, a.resident_budget_gib)
@@ -6554,7 +6587,7 @@ def main() -> int:
     # #425 (jctaborda): a download that resumes needs room only for what is still missing - the finished shards and
     # the .part files already on the disk count
     on_disk = sum(f.stat().st_size for s in shards for f in (s, s.with_name(s.name + ".part")) if f.is_file()) / 1e9
-    to_fetch = 0 if a.gguf_dir or have_model else max(MODELS[model]["download_gb"] - on_disk, 0)
+    to_fetch = 0 if a.gguf_dir or have_model else max(model_download_gb(fam, model) - on_disk, 0)
     # count only what step 6 will still write: a pack whose experts.bin is already there (the AVX-512 Q2_0
     # conversion, or the low-RAM mode's copy) and an existing MTP draft layer need no new room
     pack_now = find_in(roots, f"packs/{tag.lower()}") or data / "packs" / tag.lower()
@@ -6625,16 +6658,17 @@ def main() -> int:
                     continue
                 except OSError:
                     pass
-            download(fam["hf"].format(q=model) + s.name, s)
+            download(fam.get("hf_by_model", {}).get(model, fam["hf"]).format(q=model) + s.name, s)
     if not ready:
         check_shards(shards)
     for s in ([] if ready else shards):                # the Unsloth files: pinned sizes and SHA-256
         if s.name in fam.get("sha256", {}):
             verify_sha256(s, *fam["sha256"][s.name])
     ok("model files present")
-    mmproj = Path(a.models_dir) / fam.get("mmproj", MMPROJ)
+    mmproj_rel = Path(fam.get("mmproj_dir", "")) / fam.get("mmproj", MMPROJ)
+    mmproj = Path(a.models_dir) / mmproj_rel
     if not mmproj.exists():                            # an earlier install's copy (the same file for every family)
-        mmproj = find_in(roots, f"models/{fam['mmproj']}") or mmproj
+        mmproj = find_in(roots, f"models/{mmproj_rel.as_posix()}") or mmproj
     if vision != "none":
         if not mmproj.exists() and a.gguf_dir and (Path(a.gguf_dir) / fam["mmproj"]).exists():
             mmproj = Path(a.gguf_dir) / fam["mmproj"]

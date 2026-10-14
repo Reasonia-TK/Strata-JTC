@@ -114,6 +114,9 @@ GPU、RAM、ディスク容量を確認して、PCに合ったモデルを導入
 # Swift 1.5を追加
 .\ADD-MODEL.bat --family swift --model IQ2_XS
 
+# SC117版Swift 1.5 Abliteratedを追加（量子化をメニューで選択）
+.\ADD-MODEL.bat --family swift-abliterated
+
 # Coderを推奨設定で、質問なしで追加
 .\ADD-MODEL.bat --family coder --yes
 
@@ -133,6 +136,32 @@ GPU、RAM、ディスク容量を確認して、PCに合ったモデルを導入
 
 Linux / Macでは`./setup.sh --setup --no-start`を実行します。
 設定を変更してそのまま起動したい場合は、Windowsでは`SETUP.bat`、Linux / Macでは`./setup.sh --setup`を使います。
+
+## SC117版Swift 1.5 Abliteratedを追加する
+
+[SC117版Swift 1.5 Abliterated](https://huggingface.co/SC117/Swift-1.5-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-GGUF)を、
+初回セットアップや`ADD-MODEL.bat`のモデル一覧から選べます。通常のSwiftとは別のモデルとして保存します。
+Swift 1.5に拒否方向を除去する調整を加えた派生モデルです。
+
+```powershell
+# 量子化を選んで追加
+.\ADD-MODEL.bat --family swift-abliterated
+
+# IQ2_XSを指定して追加し、完了後に起動
+.\ADD-MODEL.bat --family swift-abliterated --model IQ2_XS
+.\RUN-STRATA.bat --model swift-abliterated-iq2_xs
+```
+
+| 量子化 | モデル本体の容量 |
+| --- | ---: |
+| `Q2_0` | 66.51 GB |
+| `IQ2_XS` | 68.15 GB |
+| `IQ3_XXS` | 75.83 GB |
+| `IQ3_S` | 83.55 GB |
+
+GBは10億バイトで、各量子化の2分割ファイルの合計です。実行用のパック、MTP、画像エンコーダーは別途必要です。
+固定リビジョンのファイルを取得し、容量とSHA-256を確認します。Swift Open License 1.0が適用されます。
+モデルの構造・分割ファイルと設定生成を確認していますが、このPCで本体の全量取得や推論は試していません。
 
 ## GLM-5.3-Flashを追加する
 
@@ -199,6 +228,31 @@ VisionをONにするには、そのモデルの画像エンコーダーを先に
 
 停止するには起動したウィンドウを閉じます。`START-HERE.bat`から導入済みモデルを起動する方法も引き続き利用できます。
 
+## Qwenモデルを自動調整する
+
+モデルを導入した後、`--calibrate`を付けると、このPCで複数の設定の生成速度を測り、速かった設定を保存します。
+所要時間の目安は15〜30分ですが、PCやモデルによって長くなります。測定中はほかの重い処理を止めてください。
+いつものStrataを終了してから、リポジトリーのフォルダーで実行します。
+
+```powershell
+# 導入済みのQwen3.8-Flash-Nextから対象を選び、調整後に起動
+.\START-HERE.bat --calibrate --family qwen
+
+# IQ2_XSを指定し、調整結果を保存して終了する
+.\START-HERE.bat --calibrate --family qwen --model IQ2_XS --no-start
+
+# 保存した設定で後から起動
+.\RUN-STRATA.bat --model iq2_xs
+```
+
+Linuxでは`./setup.sh --calibrate --family qwen --model IQ2_XS --no-start`を使います。
+対象の量子化は先に導入しておく必要があります。`--setup`や`--check`とは一緒に指定しません。
+調整結果はモデルの`strata-*.json`とユーザー設定に保存され、次回の起動でも使われます。
+Windowsのユーザー設定は通常`%APPDATA%\Strata\settings.json`にあります。
+
+この手順はStrata本体のQwen3.8-Flash-Next用エンジンが対象です。GLMとQwen3.6は対象外です。
+速度向上はPCや設定によって異なり、改善が確認できなければ既定値を使います。
+
 ## 会社のLAN・プロキシ・SSL証明書
 
 モデルと画像エンコーダーの取得には`huggingface-hub`を使います。
@@ -262,6 +316,7 @@ LinuxのROCmはGPUごとのAMD配布先を利用し、uvで導入します。
 | --- | --- | --- |
 | `qwen` | Qwen3.8-Flash-Next | Q2_0、IQ2_XS、IQ3_XXS、IQ3_S |
 | `swift` | Swift 1.5 | IQ2_XS、IQ3_XXS、IQ3_S。応答前の思考を短くする調整を加えたモデル |
+| `swift-abliterated` | SC117版Swift 1.5 Abliterated | Q2_0、IQ2_XS、IQ3_XXS、IQ3_S。通常のSwiftとは別に追加可能 |
 | `coder` | Coder | コード用データに基づいてエキスパートを半分にしたモデル。サイズはIQ1_M |
 | `unsloth` | Unslothの量子化モデル | UD-IQ4_XS、UD-Q4_K_XL、UD-Q5_K_XL、UD-Q6_K_XL、Q8_0。ダウンロードは約94〜188 GB |
 | `nvfp4` | NVFP4形式のモデル | NVIDIA専用。AMD / Intel向けメニューでは表示しない |
