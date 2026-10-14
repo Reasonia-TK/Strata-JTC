@@ -136,6 +136,9 @@ class Session:
 def run(cfg: dict, say=print, start_engine=None) -> dict:
     """Measure on the engine `cfg` describes; returns {"settings": {flag: value}, "report": {...}}.
     `start_engine(args)` returns a started engine (serve.server.StrataEngine or a stand-in in tests)."""
+    from glm_models import CALIBRATION_UNSUPPORTED, is_external
+    if is_external(cfg):
+        raise ValueError(CALIBRATION_UNSUPPORTED)
     if start_engine is None:
         from serve.server import StrataEngine, child_env
 

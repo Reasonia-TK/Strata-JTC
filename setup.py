@@ -59,7 +59,9 @@ import urllib.parse
 import zipfile
 from pathlib import Path
 
-from glm_models import FAMILY as GLM_FAMILY, QUANTS as GLM_QUANTS, TITLE as GLM_TITLE, is_external
+from glm_models import (
+    CALIBRATION_UNSUPPORTED, FAMILY as GLM_FAMILY, QUANTS as GLM_QUANTS, TITLE as GLM_TITLE, is_external,
+)
 
 ROOT = Path(__file__).resolve().parent
 WIN = os.name == "nt"
@@ -4833,9 +4835,12 @@ def hardware_key(cfg: dict) -> str:
 def calibrate_config(cfg_path: Path) -> bool:
     """Measure the engine's hardware-dependent settings on this PC (tools/calibrate.py), write them into the run
     config and remember them per PC and model in the settings file, so an update or a reinstall keeps them."""
+    cfg = json.loads(cfg_path.read_text(encoding="utf-8-sig"))
+    if is_external(cfg):
+        warn(CALIBRATION_UNSUPPORTED)
+        return False
     sys.path.insert(0, str(ROOT / "tools"))
     import calibrate as CAL
-    cfg = json.loads(cfg_path.read_text(encoding="utf-8-sig"))
     say()
     say("  Tuning Strata for this PC: the output speed is measured with a few engine settings (the PCIe share, the")
     say("  draft depth, the CPU threads, the expert cache). It takes roughly 15-30 minutes (3 rounds of each value); the PC is busy meanwhile.")
@@ -5909,7 +5914,7 @@ def main() -> int:
                     help="where the ready-made engine is (a URL folder or a local folder)")
     ap.add_argument("--check", action="store_true", help="only check this PC and exit")
     ap.add_argument("--calibrate", action="store_true",
-                    help="tune the engine's settings for this PC (about 15-30 minutes, longer on a slow card), then start the model")
+                    help="StrataのQwen用エンジンを実測して調整（約15〜30分）。GLMのllama.cppエンジンは対象外")
     ap.add_argument("--draft-vocab", choices=list(DRAFT_VOCABS),
                     help="the draft layer's tokens: cjk = with Chinese, Japanese and Korean (default), en = English "
                          "and code only (~110 MiB less VRAM, English answers 1-2%% faster), cyrillic = English, code "
@@ -5942,6 +5947,14 @@ def main() -> int:
                          "sycl = Intel Arc, EXPERIMENTAL: Linux, built from source (docs/INTEL_ARC.md)")
     ap.add_argument("--skip-build", action="store_true", help=argparse.SUPPRESS)
     a = ap.parse_args()
+    if a.calibrate and a.family == GLM_FAMILY:
+        ap.error(CALIBRATION_UNSUPPORTED)
+    if a.calibrate and not (a.setup or a.check or a.model or a.family):
+        # 導入済みモデルがGLMだけなら、保存先の移動や再セットアップより前に止める。
+        calibration_configs = installed_configs()
+        if calibration_configs and all(is_external(json.loads(p.read_text(encoding="utf-8-sig")))
+                                       for p in calibration_configs):
+            ap.error(CALIBRATION_UNSUPPORTED)
     if a.model and a.model not in MODELS and a.family not in (*PREVIEW_FAMILIES, GLM_FAMILY):
         ap.error(f"--model {a.model} is a size of " + ", ".join(f"--family {f}" for f, d in PREVIEW_FAMILIES.items()
                                                               if a.model in d["models"])

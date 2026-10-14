@@ -155,6 +155,9 @@ Qwenの速度の測定値やVision、MTP、エキスパートキャッシュの�
 GPUへの割り当てとMoEのCPU計算もbatから変更できます。量子化別の容量、設定例、検証状況は
 [GLMの手順](docs/GLM_SETUP.md)を参照してください。
 
+`START-HERE.bat --calibrate`による速度の自動調整は、現在はStrata本体のQwen用エンジンが対象です。
+GLMでは利用できません（[対応状況と調整候補](docs/GLM_SETUP.md#自動調整--calibrateの対応状況)）。
+
 このPC（Ryzen 7 7700、RAM約32 GiB、RTX 5070 Ti）では、`UD-IQ1_S`を全量取得し、
 コンテキスト1024でモデル読み込みとAPI生成を確認しました。読み込みは約20秒、短い生成の出力速度は
 約1.57トークン/秒でした。測定条件と制約は[GLMの実測結果](docs/GLM_SETUP.md#このpcでの実測2026年10月15日)を参照してください。

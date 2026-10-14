@@ -20,7 +20,7 @@ sys.path.insert(0, str(ROOT))
 import setup
 from glm_models import CATALOG, QUANTS
 from serve import llama_runtime
-from tools import launch_strata, setup_glm
+from tools import calibrate, launch_strata, setup_glm
 
 
 def config():
@@ -212,6 +212,61 @@ class Installer(unittest.TestCase):
              self.assertRaises(SystemExit):
             setup_glm.install(self.args)
         self.assertFalse((self.root / "strata-glm53-ud-iq1_s.json").exists())
+
+
+class Calibration(unittest.TestCase):
+    def test_cli_stops_before_moving_downloading_or_starting_glm(self):
+        for args in (["--calibrate"], ["--calibrate", "--no-start"],
+                     ["--family", "glm53", "--calibrate"],
+                     ["--family", "glm53", "--setup", "--no-start", "--calibrate"]):
+            with self.subTest(args=args), tempfile.TemporaryDirectory() as temp:
+                path = Path(temp) / "strata-glm53-ud-iq1_s.json"
+                snapshot = json.dumps(config()).encode("utf-8")
+                path.write_bytes(snapshot)
+                output = io.StringIO()
+                with mock.patch.object(setup, "ROOT", Path(temp)), \
+                     mock.patch.object(sys, "argv", ["setup.py", *args]), \
+                     mock.patch.object(setup, "data_folder") as move, \
+                     mock.patch.object(setup, "download") as download, \
+                     mock.patch.object(setup, "start") as start, \
+                     mock.patch.object(setup_glm, "install") as install, \
+                     contextlib.redirect_stderr(output), contextlib.redirect_stdout(output), \
+                     self.assertRaises(SystemExit) as stopped:
+                    setup.main()
+                self.assertEqual(stopped.exception.code, 2)
+                self.assertIn("GLM", output.getvalue())
+                self.assertIn("対象外", output.getvalue())
+                for operation in (move, download, start, install):
+                    operation.assert_not_called()
+                self.assertEqual(path.read_bytes(), snapshot)
+
+    def test_config_calibration_keeps_glm_files_and_saved_settings(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "strata-glm53-ud-iq1_s.json"
+            snapshot = json.dumps(config()).encode("utf-8")
+            path.write_bytes(snapshot)
+            with mock.patch.object(setup, "write_config") as write, \
+                 mock.patch.object(setup, "save_settings") as save, \
+                 mock.patch.object(calibrate, "run") as run, contextlib.redirect_stdout(io.StringIO()):
+                self.assertFalse(setup.calibrate_config(path))
+            for operation in (write, save, run):
+                operation.assert_not_called()
+            self.assertEqual(path.read_bytes(), snapshot)
+
+    def test_direct_calibration_rejects_glm_before_tokenizer_and_engine(self):
+        start = mock.Mock()
+        with self.assertRaisesRegex(ValueError, "GLM.*対象外"):
+            calibrate.run(config(), start_engine=start)
+        start.assert_not_called()
+
+    def test_interactive_glm_install_cannot_ignore_calibration(self):
+        with mock.patch.object(setup, "download") as download, \
+             mock.patch.object(setup_glm, "choose_backend") as hardware, \
+             contextlib.redirect_stdout(io.StringIO()), self.assertRaises(SystemExit) as stopped:
+            setup_glm.install(options(calibrate=True))
+        self.assertEqual(stopped.exception.code, 1)
+        download.assert_not_called()
+        hardware.assert_not_called()
 
 
 class ArchiveAndCatalog(unittest.TestCase):

@@ -7,7 +7,9 @@ import tarfile
 import zipfile
 from pathlib import Path
 
-from glm_models import CATALOG, FAMILY, MAX_CONTEXT, MEMORY_GB, QUANTS, TITLE, catalog_url, recommended_quant
+from glm_models import (
+    CALIBRATION_UNSUPPORTED, CATALOG, FAMILY, MAX_CONTEXT, MEMORY_GB, QUANTS, TITLE, catalog_url, recommended_quant,
+)
 
 RELEASE = "b11617"
 RELEASE_BASE = f"https://github.com/ggml-org/llama.cpp/releases/download/{RELEASE}/"
@@ -94,6 +96,8 @@ def install_runtime(a, backend):
 
 def install(a):
     import setup
+    if getattr(a, "calibrate", False):
+        setup.fail(CALIBRATION_UNSUPPORTED)
     from serve.llama_runtime import gpu_layers_value
     layers = gpu_layers_value(a.gpu_layers)
     backend = choose_backend(a)

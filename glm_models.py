@@ -9,6 +9,10 @@ FAMILY = "glm53"
 TITLE = "GLM-5.3-Flash (Unsloth GGUF / llama.cpp)"
 QUANTS = CATALOG["models"]
 MAX_CONTEXT = 1048576
+CALIBRATION_UNSUPPORTED = (
+    "GLMは現在の --calibrate の対象外です。これはStrataのQwen用エンジンを調整する機能で、"
+    "llama.cppを使うGLMには適用できません。GLM用の自動調整には別の測定処理が必要です。"
+)
 
 # 作者の公開範囲を参考にした判定用の目安（RAM + VRAM、GB）。
 # IQ1_Mと5/6 bitはファイル容量 + 約8〜10 GBからの概算。
