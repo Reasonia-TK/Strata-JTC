@@ -127,9 +127,8 @@ class Download(Base):
     def test_falls_back_when_modelscope_is_silent(self):
         calls = []
         with mock.patch.object(setup, "reachable", return_value=False), \
-                mock.patch.object(setup.urllib.request, "urlopen",
-                                  side_effect=lambda req, timeout=0: calls.append(req.full_url) or (_ for _ in ()).throw(
-                                      OSError("offline"))), \
+                mock.patch.object(setup, "download_huggingface",
+                                  side_effect=lambda url, *args: calls.append(url) or (_ for _ in ()).throw(SystemExit(1))), \
                 mock.patch.object(setup.time, "sleep"), self.assertRaises(SystemExit):
             setup.download(HF_URL, self.dst)
         self.assertTrue(calls and all(u == HF_URL for u in calls), calls[:2])

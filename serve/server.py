@@ -6632,6 +6632,9 @@ def main() -> int:
                     help="the mock engine's answer (default: a short greeting); given more than once, requests get "
                          "them in turn and the last one repeats")
     ap.add_argument("--port", type=int, default=8095)
+    ap.add_argument("--context", type=int, help="override the engine context for this start only")
+    ap.add_argument("--vision", choices=["keep", "on", "off", "gpu", "cpu"], default="keep",
+                    help="override the installed vision encoder for this start only")
     ap.add_argument("--gpu", help="the GPU to run on, as nvidia-smi numbers them, or several for a layer split "
                                   "(\"0,2\"; also \"gpu\" in the config)")
     ap.add_argument("--tokenizer", default=str(ROOT / "pack/full/tokenizer"),
@@ -6668,6 +6671,12 @@ def main() -> int:
                          "[{\"gpus\": [0, 1]}, {\"gpus\": [2, 3]}])")
     a = ap.parse_args()
     cfg = json.loads(Path(a.config).read_text(encoding="utf-8-sig")) if a.config else {}   # Notepad adds a BOM
+    if a.context is not None or a.vision != "keep":
+        from serve.launch_options import apply_overrides
+        try:
+            cfg = apply_overrides(cfg, a.context, a.vision)
+        except ValueError as e:
+            ap.error(str(e))
     lift_reasoning_effort_arg(cfg)
     if a.replicas is not None:
         cfg["replicas"] = a.replicas

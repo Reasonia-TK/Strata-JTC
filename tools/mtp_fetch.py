@@ -306,6 +306,10 @@ def main():
         for name in bad:
             print("MTP tensor missing or corrupt: %s" % name, file=sys.stderr)
         sys.exit(BAD if bad else 0)
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from strata_network import configure_network
+    configure_network()
     resolve_repo()
     inventory(a.out) if a.cmd == "inventory" else fetch(a.out, a.only)
 

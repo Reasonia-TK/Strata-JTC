@@ -151,7 +151,11 @@ explicit packing conversion and is not an installer menu option.
 
 ## Adding or switching models
 
-You can add another model any time with `SETUP.bat` (the same as `START-HERE.bat --setup`; on Linux
-`./setup.sh --setup`). Files another model shares are not downloaded again (the Coder uses the original's shard 2 and
-vision encoder). With more than one model installed, `START-HERE.bat` asks which one to start; `run-<model>.bat`
-(Linux: `run-<model>.sh`) starts one directly.
+Windowsでは`ADD-MODEL.bat`で、初回に選ばなかったモデルを後から追加できます。
+モデルとサイズを選び、ダウンロードと準備まで行います。共通ファイルは再利用し、完了後には起動しません。
+Linux / Macでは`./setup.sh --setup --no-start`を実行します。
+
+追加後は`RUN-STRATA.bat --list-models`で一覧を確認し、`--model swift-iq2_xs`などで起動するモデルを指定します。
+モデル別の`run-<model>.bat`（Linux / Macでは`.sh`）からも起動できます。
+設定を変更してそのまま起動する場合は`SETUP.bat`または`./setup.sh --setup`を使います。
+詳しくは[READMEの追加手順](../README.md#別のモデルを後から追加する)を参照してください。

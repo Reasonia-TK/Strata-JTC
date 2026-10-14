@@ -1,243 +1,379 @@
-<h1 align="center">Strata</h1>
+<h1 align="center">Strata-jtc</h1>
 
-**English** · [简体中文](README.zh-CN.md) · [日本語](README.ja.md) · [Deutsch](README.de.md) · [Français](README.fr.md) · [Español](README.es.md) · [Português](README.pt-BR.md)
+<p align="center"><b>1250億パラメーターのAIモデルを、自分のPCで動かす</b><br>
+NVIDIA / AMD GPUとシステムRAMを利用 · Windows / Linux · オープンソース</p>
 
-<p align="center"><b>Run a 125-billion-parameter AI model on your own gaming PC</b><br>
-NVIDIA or AMD graphics card (12 GB or more) · Windows or Linux · free and open source</p>
+Strata-jtcは、[Strata](https://github.com/Niko1221/Strata)をもとに、ローカルPCで
+**[Qwen3.8-Flash-Next](https://huggingface.co/Qwen/Qwen3.8-Flash-Next)**とその派生モデルを動かすプロジェクトです。
+チャット、コード作成、画像の読み取り、各種アプリやコーディングエージェントとの連携に対応します。
+推論は自分のPCで行います。
 
-<p align="center"><a href="https://github.com/Niko1221/Strata/releases/download/v0.1.10/Pagoda.mp4"><img src="docs/media/pagoda-preview.webp" width="720" alt="A voxel pagoda garden that Strata's model wrote, running in the browser"></a><br>
-<sub>A voxel pagoda garden, 1 shot prompt running on an RTX 5070 with Strata (IQ3_S, 128K context) ·
-<a href="https://github.com/Niko1221/Strata/releases/download/v0.1.10/Pagoda.mp4">full video (49 s)</a></sub></p>
+この構成では、Pythonの依存関係を**uvと`uv.lock`**で管理し、モデルを**`huggingface-hub`**で取得します。
+OSの証明書ストアと追加CAを利用できるため、会社のLANやプロキシの設定にも対応できます。
+Windowsでは、初回導入・モデルの追加・通常の起動にそれぞれ専用のbatを用意しています。
 
-Strata runs **[Qwen3.8-Flash-Next](https://huggingface.co/Qwen/Qwen3.8-Flash-Next)** on a normal PC. This is a
-large, smart AI model that usually needs a server. It chats, writes code, reads pictures and works with your apps
-and coding agents. Nothing leaves your PC.
-
-## How fast is it?
-
-We measured it on two ordinary gaming PCs. A token is about ¾ of a word.
-
-- **Writes answers:** how fast the reply appears in a short chat. 60 tokens per second is faster than you can read.
-- **Reads your prompt:** how fast it takes in what you send (here a 32K-token document, code or chat history).
-
-<table>
-<tr><th>NVIDIA: RTX 5070 (12 GB), Ryzen 5 7600, 64 GB RAM</th><th>AMD: RX 9070 XT (16 GB), Ryzen 9 3900X, 47 GB RAM</th></tr>
-<tr><td>
-
-| Size | Writes answers | Reads your prompt |
-| --- | ---: | ---: |
-| **Q2_0** | 94 tokens/s | 2,650 tokens/s |
-| **IQ2_XS** | 79 tokens/s | 2,090 tokens/s |
-| **IQ3_XXS** | 62 tokens/s | 1,750 tokens/s |
-| **IQ3_S** | 53 tokens/s | 1,620 tokens/s |
-| **Coder** | 55 tokens/s | 2,180 tokens/s |
-
-</td><td>
-
-| Size | Writes answers | Reads your prompt |
-| --- | ---: | ---: |
-| **Q2_0** | 60 tokens/s | 1,160 tokens/s |
-| **IQ2_XS** | 52 tokens/s | 1,110 tokens/s |
-| **Coder** | 44 tokens/s | 1,420 tokens/s |
-
-</td></tr>
-</table>
-
-NVIDIA: Q2_0 with engine 0.1.36, the other rows with 0.1.26 (4K answers, 32K prompts). The full tables are in
-[DETAILS.md](docs/DETAILS.md#speed-measured). A card with more VRAM is faster: an RTX 3090 (24 GB) should write
-about 100-140 tokens per second. Long chats and other cards: [speed of each model](docs/MODELS.md#how-fast-is-each-size),
-[community results](docs/COMMUNITY_BENCHMARKS.md).
-
-<p align="center"><a href="https://buymeacoffee.com/strataengine"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" height="50"></a><br>
-<sub>Strata is free. If it runs well on your PC, a coffee keeps the work on it going.</sub></p>
-
-## What you need
-
-| | |
+| やりたいこと | Windowsで使うファイル |
 | --- | --- |
-| **Graphics card** | **NVIDIA** GeForce RTX 20, 30, 40 or 50 series, or **AMD** Radeon RX 7900 XT / XTX, RX 7800 XT / 7700 XT, RX 9060 XT, RX 9070 / 9070 XT, Radeon AI PRO R9700 or RX 6800 / 6900 series. It needs **12 GB of VRAM or more**. |
-| **RAM** | 32 GB or more. Your RAM decides [which model](#which-model-should-i-pick) fits. 64 GB runs every size. |
-| **Disk** | About 80 GB free. Use an SSD if you can: the first start is much faster. |
-| **System** | Windows 10 / 11 or Linux, and a current graphics driver from NVIDIA or AMD. |
+| 初めてセットアップする | **`START-HERE.bat`** |
+| 初回に選ばなかったモデルを後から追加する | **`ADD-MODEL.bat`** |
+| 導入済みモデルを起動する・起動時の設定を変更する | **`RUN-STRATA.bat`**、または`run-<model>.bat` |
+| セットアップ時の設定を変更し、起動する | `SETUP.bat` |
+| Strataを起動せずに更新する | `UPDATE.bat` |
+| 自分のPCで速度を測定する | `BENCH.bat` |
 
-The installer sets up everything else. Two or three cards can share the model ([multi-GPU](docs/MULTI_GPU.md)).
+<p align="center"><a href="https://github.com/Niko1221/Strata/releases/download/v0.1.10/Pagoda.mp4"><img src="docs/media/pagoda-preview.webp" width="720" alt="Strataのモデルが生成した、ブラウザーで動くボクセルの塔と庭園"></a><br>
+<sub>RTX 5070、IQ3_S、128Kコンテキストで、1回の指示から作成した庭園 ·
+<a href="https://github.com/Niko1221/Strata/releases/download/v0.1.10/Pagoda.mp4">動画全編（49秒）</a></sub></p>
 
-Experimental, written and tested by community members on their own machines:
+<a id="what-you-need"></a>
 
-- **Older graphics cards** (Tesla P40 / V100, GTX 10, Radeon VII / MI50, RX 6700 XT, RX 5500 XT): [Older GPUs](docs/OLDER_GPUS.md).
-- **Intel Arc**, built from source on Linux: [Intel Arc](docs/INTEL_ARC.md).
-- **Apple Silicon Macs (M1 to M5)**, built from source by `./setup.sh` (the Metal engine): [Mac](docs/MAC.md).
-- **AMD Ryzen AI Max (Strix Halo)**, built from source on Linux: [Strix Halo](docs/STRIX_HALO.md).
-- **Older processors without AVX2**: they work, but slowly. [Older CPUs](docs/INSTALL.md#older-cpus-experimental).
+## 必要な環境
 
-The full list: [docs/INSTALL.md](docs/INSTALL.md#what-you-need).
+下表は、主にQwen3.8-Flash-Nextの標準サイズを使う場合の目安です。モデルと設定によって必要量は変わります。
 
-## Install
+| 項目 | 目安 |
+| --- | --- |
+| **GPU** | NVIDIA GeForce RTX 20 / 30 / 40 / 50シリーズ、または対応するAMD Radeon。標準構成は**VRAM 12 GB以上**が目安 |
+| **RAM** | **32 GB以上**。容量に合うモデルを選択。64 GBではQ2_0〜IQ3_Sを選べるが、大きいUnslothモデルはさらに必要 |
+| **ディスク** | 標準モデル本体だけで約66〜84 GB。変換後のパックやMTPにも空き容量が必要。モデルを追加する場合は必要量が増える。SSDを推奨 |
+| **OS** | Windows 10 / 11またはLinux。対応するGPUドライバーが必要 |
+| **Python・依存関係** | uvが`.venv`を用意。対応するPythonがなければ取得。uv自体も見つからなければローカルに導入 |
 
-### Let your AI set it up
+対応するAMD GPUにはRX 7900 XT / XTX、RX 7800 XT / 7700 XT、RX 9060 XT、RX 9070 / 9070 XT、
+Radeon AI PRO R9700、RX 6800 / 6900シリーズなどがあります。詳細は[AMDの対応状況](docs/AMD_HIP.md)を参照してください。
+2枚以上のGPUでモデルを分担することもできます（[マルチGPU](docs/MULTI_GPU.md)）。
 
-Do you use an AI coding assistant (Claude Code, Cursor, Codex, GitHub Copilot, ...)? Paste this into it:
+次の環境にも試験的な対応があります。対応状況と必要な手順は各ページを確認してください。
+
+- [旧世代GPU](docs/OLDER_GPUS.md)：Tesla P40 / V100、GTX 10、Radeon VII / MI50、RX 6700 XT、RX 5500 XTなど
+- [Intel Arc](docs/INTEL_ARC.md)：Linuxでソースからビルド
+- [Appleシリコン搭載Mac](docs/MAC.md)：M1〜M5、macOS 15以降。Metalエンジンをビルド
+- [AMD Ryzen AI Max（Strix Halo）](docs/STRIX_HALO.md)
+- [AVX2非対応の旧世代CPU](docs/INSTALL.md#older-cpus-experimental)
+
+必要な環境の詳細は[インストール手順](docs/INSTALL.md#what-you-need)を参照してください。
+
+<a id="install"></a>
+<a id="or-do-it-yourself"></a>
+
+## 初回セットアップ
+
+Strata-jtcのフォルダーを用意し、Windowsでは**`START-HERE.bat`をダブルクリック**します。
+NVIDIA / AMDのGPUを検出して対応するエンジンを用意し、次の項目を選択します。
+
+1. モデルの種類とサイズ
+2. コンテキスト長：モデルが一度に扱えるテキストの量
+3. Vision：画像の読み取りを使うかどうか
+
+各項目でEnterを押すと、そのPCに対する推奨値または既存の設定が選ばれます。
+モデルをダウンロードして準備し、起動が完了すると`http://127.0.0.1:8080`を開きます。
+ダウンロードが中断した場合は再実行すると再開します。
+
+ターミナルでモデルなどを指定することもできます。次の例は、ダウンロードと準備まで行い、起動は後で行います。
+
+```powershell
+.\START-HERE.bat --family qwen --model IQ2_XS --vision yes --no-start
+```
+
+`--yes`を追加すると質問せず推奨設定を使います。Visionも使いたい場合は`--vision yes`などを明示します。
+モデルの容量と必要なディスク容量は選択した種類によって異なります。
+
+> モデルの起動時には、大量のデータをRAMに読み込み、その一部をGPU用に固定するため、PCの動作が遅くなることがあります。
+> 元のStrataの案内では1〜3分程度、初回はさらに長くかかる場合があります。ウィンドウの処理状況を確認して待ってください。
+
+**Linux：** Strata-jtcのフォルダーで`./setup.sh`を実行します。
+**Mac：** 最初に`xcode-select --install`でAppleのCommand Line Toolsを導入し、`./setup.sh`を実行します。
+Mac用エンジンのビルド手順と対応状況は[Macの手順](docs/MAC.md)を参照してください。
+
+<a id="let-your-ai-set-it-up"></a>
+
+AIコーディングアシスタントにセットアップを依頼する場合は、このチェックアウトを指定して次のように伝えます。
 
 ```text
-Set up Strata on this PC for me: https://github.com/Niko1221/Strata - follow docs/AI_SETUP.md in that repository.
+このPCにStrata-jtcをセットアップしてください。このリポジトリーのdocs/AI_SETUP.mdに従い、
+GPU、RAM、ディスク容量を確認して、PCに合ったモデルを導入してください。
 ```
 
-It checks your graphics card, RAM and disk and picks the model that fits. Then it installs and starts it and tells
-you how to connect your apps. AI tools can also install, start and stop Strata through its
-[MCP server](docs/MCP_SERVER.md).
+[MCPサーバー](docs/MCP_SERVER.md)を使った導入・起動・停止にも対応しています。
 
-### Or do it yourself
+## 別のモデルを後から追加する
 
-[Download Strata](https://github.com/Niko1221/Strata/archive/refs/heads/main.zip) and unzip it (or `git clone` it).
-**Windows:** double-click **`START-HERE.bat`**. **Linux:** run **`./setup.sh`** in the Strata folder.
+初回に選ばなかったモデルは、**`ADD-MODEL.bat`をダブルクリック**して追加します。
+モデルの種類、サイズ、コンテキスト長、Visionを選ぶと、**ダウンロードと利用準備だけ**を行います。
+完了後にモデルは起動しません。導入済みの共通ファイルは再利用します。
+同じモデル・サイズを選んだ場合は、そのモデルの設定変更になります。
 
-**Mac (Apple Silicon, M1 to M5, macOS 15 or newer):** install Apple's Command Line Tools once
-(`xcode-select --install` in Terminal; Xcode itself is not needed). Then open Terminal in the Strata folder and run
-**`./setup.sh`**. It builds the Mac engine on your Mac (about 7 minutes), asks the same questions, downloads the model
-and starts it. Next time, `./setup.sh` starts it right away. Which size fits your Mac and how fast it is:
-[docs/MAC.md](docs/MAC.md).
+モデルを指定して追加する例：
 
-The steps are the same for NVIDIA and AMD. The installer finds your card and sets up the right engine for it. It
-asks you a few questions:
+```powershell
+# 別の量子化サイズを追加
+.\ADD-MODEL.bat --family qwen --model IQ3_S
 
-- which model and which size,
-- how much context (how much text the model keeps in mind),
-- whether it should read pictures.
+# Swift 1.5を追加
+.\ADD-MODEL.bat --family swift --model IQ2_XS
 
-Press Enter each time for the recommended answer. Then it downloads the model (about 70 GB) and starts it. If the
-download stops, run it again: it continues where it left off. Your browser opens the Strata app at
-`http://127.0.0.1:8080`.
+# Coderを推奨設定で、質問なしで追加
+.\ADD-MODEL.bat --family coder --yes
+```
 
-> **While the model starts, your PC can be slow or stop responding for 1-3 minutes** (longest the first time).
-> Strata loads 35-55 GB into your RAM and locks part of it for the graphics card. This is normal. Wait, and don't
-> close the window. The window shows what Strata is doing.
+追加が終わったら、導入済みのモデルを確認して起動します。
 
-**Next time**, run `START-HERE.bat` (or `./setup.sh`) again. It starts right away and downloads nothing twice. Close
-its window to stop the model. `UPDATE.bat` (`./update.sh`) updates Strata without starting it. Updating, Docker,
-several cards, where the files go and every option: [docs/INSTALL.md](docs/INSTALL.md).
+```powershell
+.\RUN-STRATA.bat --list-models
+.\RUN-STRATA.bat --model swift-iq2_xs
+```
 
-**Is it fast on your PC?** Run `BENCH.bat` (`./bench.sh`): about 5-10 minutes, it measures chat, 4K/16K prompts and an agent-style session with your own settings and writes a report to share ([how](docs/COMMUNITY_BENCHMARKS.md#run-the-benchmark)).
+`RUN-STRATA.bat`の`STRATA_MODEL`に設定ファイル名やモデル名を保存しておくこともできます。
+セットアップが作成したモデル別の`run-<model>.bat`を使えば、そのモデルを直接起動できます。
 
-## Which model should I pick?
+Linux / Macでは`./setup.sh --setup --no-start`を実行します。
+設定を変更してそのまま起動したい場合は、Windowsでは`SETUP.bat`、Linux / Macでは`./setup.sh --setup`を使います。
 
-The installer recommends one for your RAM. The same model comes in several sizes, compressed more or less. Smaller
-sizes are faster. Larger sizes are a bit smarter.
+## 通常の起動と設定変更
 
-| Your RAM | Take | Why |
+セットアップ後は**`RUN-STRATA.bat`をダブルクリック**します。先頭の設定欄で次の値を変更できます。
+
+| 設定 | 指定する値 |
+| --- | --- |
+| `STRATA_MODEL` | `auto`で最近使ったモデル。`iq2_xs`、`swift-iq2_xs`、`strata-iq2_xs.json`など |
+| `STRATA_VISION` | `keep`で保存済み設定、`on` / `off`でON / OFF、`gpu` / `cpu`で画像エンコーダーの実行先 |
+| `STRATA_CONTEXT` | `auto`で保存済み設定。`32768`、`65536`、`262144`などトークン数 |
+| `STRATA_PORT` | `auto`で保存済み設定。`8080`、`8081`など1〜65535のポート番号 |
+| `STRATA_GPU` | `auto`で保存済みGPU選択。`0`、`1`、`0,1`など |
+| `STRATA_BROWSER` | `auto`で保存済み設定。`yes`でブラウザーを開く、`no`で開かない |
+| `STRATA_HOST` | 通常は`127.0.0.1`。ほかのアドレスを使う場合はAPIキーが必要 |
+
+例えば、画像をOFFにして、コンテキスト65536、ポート8081で起動する設定は次のとおりです。
+
+```bat
+if not defined STRATA_VISION set "STRATA_VISION=off"
+if not defined STRATA_CONTEXT set "STRATA_CONTEXT=65536"
+if not defined STRATA_PORT set "STRATA_PORT=8081"
+```
+
+コマンドラインからも指定できます。`--dry-run`はモデルを読み込まず設定だけを表示します。
+
+```powershell
+.\RUN-STRATA.bat --model iq2_xs --vision off --context 65536 --port 8081 --dry-run
+.\RUN-STRATA.bat --model iq2_xs --vision off --context 65536 --port 8081
+```
+
+この変更は今回の起動に適用し、保存済みのモデルJSON設定を書き換えません。
+VisionをONにするには、そのモデルの画像エンコーダーを先に導入する必要があります。
+未導入なら`SETUP.bat --vision yes`で対象モデルを選んでください。
+コンテキストを大きく増やすと必要なメモリーも増えるため、RAM / VRAMやKVの設定も調整したい場合は`SETUP.bat`を使います。
+詳しくは[起動設定の手順](docs/UV_SETUP.md#セットアップ後の起動)を参照してください。
+
+停止するには起動したウィンドウを閉じます。`START-HERE.bat`から導入済みモデルを起動する方法も引き続き利用できます。
+
+## 会社のLAN・プロキシ・SSL証明書
+
+モデルと画像エンコーダーの取得には`huggingface-hub`を使います。
+固定リビジョン、既存のSHA-256検証、`HF_ENDPOINT`によるミラー指定を維持し、ダウンロード済みのファイルを再利用します。
+uvとPythonのダウンロード処理はOSの信頼済み証明書を利用します。会社のCAがOSに登録されていれば、そのCAも利用できます。
+証明書検証とホスト名の検証は有効のままです。
+
+プロキシや未登録の会社CAを指定する場合の例：
+
+```powershell
+$env:HTTPS_PROXY = "http://proxy.example:8080"
+$env:HTTP_PROXY = $env:HTTPS_PROXY
+$env:NO_PROXY = "localhost,127.0.0.1"
+$env:SSL_CERT_FILE = "C:\certs\company-ca.pem"
+.\START-HERE.bat
+```
+
+CA証明書は会社から提供されたPEM形式のファイルを指定します。必要なら同じ設定で`ADD-MODEL.bat`を実行できます。
+会社側の接続先制限や認証がある場合は、その設定も必要です。
+[batへの設定方法・ダウンロード再開・Xetの扱い](docs/UV_SETUP.md#会社のlanプロキシca証明書)も確認してください。
+
+## uvによる依存関係の管理
+
+Pythonの依存関係の正本は`pyproject.toml`と`uv.lock`です。`requirements.txt`は互換性のための生成物です。
+
+```powershell
+# ロックした依存関係を同期。他モデル用のGPUパッケージも残す
+uv sync --locked --inexact
+
+# 依存関係の追加・削除
+uv add PACKAGE
+uv remove PACKAGE
+
+# uvからセットアップを実行
+uv run --locked python setup.py
+```
+
+CUDAライブラリはセットアップが必要なバージョンを選びます。手動の場合は
+`uv sync --locked --inexact --extra cuda13`または`--extra cuda12`を使います。
+LinuxのROCmはGPUごとのAMD配布先を利用し、uvで導入します。
+詳細と`requirements.txt`の再生成方法は[uvの手順](docs/UV_SETUP.md)を参照してください。
+
+<a id="which-model-should-i-pick"></a>
+
+## モデルの選び方
+
+インストーラーはPCのRAMやGPUに合わせて候補を提示します。同じモデルでも量子化の種類により容量と品質が変わります。
+下表は選択の目安です。OSやほかのアプリのための空きメモリーも必要です。
+
+| RAM | 候補 | 補足 |
 | --- | --- | --- |
-| **32 GB** | **Coder** | it fits 32 GB, and it is made for code (with a 24 GB card, Q2_0 and IQ2_XS run too) |
-| **48 GB** | **IQ2_XS** (or Q2_0, the fastest) | the larger sizes do not fit |
-| **64 GB** | **IQ2_XS** (recommended), or IQ3_XXS / IQ3_S | every size fits; IQ3_S is the best and the slowest |
-| **96 GB or more** | **IQ3_S**, or Unsloth's UD-IQ4_XS (~4-bit) | room for the largest sizes with everything else open |
+| **32 GB** | Coder（IQ1_M） | コード向け。24 GBのGPUがある場合は低RAMモードでQ2_0 / IQ2_XSも選択可能 |
+| **48 GB** | IQ2_XSまたはQ2_0 | 標準モデルの比較的小さいサイズ |
+| **64 GB** | IQ3_S、IQ3_XXS、IQ2_XS | 現在のメニューは、必要な空きがある場合にIQ3_Sを推奨。速度を重視する場合は小さいサイズも選択可能 |
+| **96 GB以上** | IQ3_S、Unsloth UD-IQ4_XS / UD-Q4_K_XL | 大きいモデルの候補。RAMが足りない分をSSDから読む構成では速度が下がる |
+| **128〜192 GB** | Unsloth UD-Q5_K_XL / UD-Q6_K_XL / Q8_0 | 大きい量子化モデルをRAMに保持する構成向け |
 
-- **[Coder](docs/MODELS.md#coder):** a coding version with half of the experts removed. It reaches 91% of the full
-  model's SWE-bench Verified score (measured by its authors) and fits 32 GB of RAM. It is weaker outside code,
-  including Chinese and other CJK text (#438). For those, take Q2_0, IQ2_XS or IQ3_S, which keep every expert.
-- **[Swift 1.5](docs/MODELS.md#swift-15):** a fine-tune that thinks for a much shorter time before it answers. You
-  get the answer sooner, at about the same quality.
-- **[Unsloth UD-IQ4_XS](docs/MODELS.md#unsloth-ud-iq4_xs):** Unsloth's ~4-bit version, between IQ3_S and
-  UD-Q4_K_XL in quality. A 94 GB download. With less than ~80 GB of RAM, Strata reads part of it from the SSD
-  while it answers, so it is slower there (an NVMe SSD helps).
-- **[Unsloth UD-Q4_K_XL, UD-Q5_K_XL, UD-Q6_K_XL and Q8_0](docs/MODELS.md#unsloths-files-ud-iq4_xs-to-q8_0):**
-  4- to 8-bit, closer to the full model (93-95% the same next token as Q8_0). Fast where every expert fits in RAM
-  (~88 GB for UD-Q4_K_XL up to ~136 GB for Q8_0); with less RAM Strata reads part of them from the SSD while it
-  answers, which is much slower (7-8.5 tokens/s for UD-Q4_K_XL on a 64 GB PC).
-- **[OrcaRouter's Uncensored IQ3_XXS](docs/MODELS.md#orcarouter-uncensored-iq3_xxs):** you set it up by hand. It is
-  not in the installer's menu.
+追加メニューでは次の種類を選べます。利用できる種類はバックエンドによって異なります。
 
-Sizes, downloads and what fits where: [docs/MODELS.md](docs/MODELS.md). To add another model later, run
-`SETUP.bat` (Linux: `./setup.sh --setup`).
+| `--family` | 種類 | 補足 |
+| --- | --- | --- |
+| `qwen` | Qwen3.8-Flash-Next | Q2_0、IQ2_XS、IQ3_XXS、IQ3_S |
+| `swift` | Swift 1.5 | IQ2_XS、IQ3_XXS、IQ3_S。応答前の思考を短くする調整を加えたモデル |
+| `coder` | Coder | コード用データに基づいてエキスパートを半分にしたモデル。サイズはIQ1_M |
+| `unsloth` | Unslothの量子化モデル | UD-IQ4_XS、UD-Q4_K_XL、UD-Q5_K_XL、UD-Q6_K_XL、Q8_0。ダウンロードは約94〜188 GB |
+| `nvfp4` | NVFP4形式のモデル | NVIDIA専用。AMD / Intel向けメニューでは表示しない |
+| `qwen36` | Qwen3.6-35B-A3B | より小さい別モデル。CUDA / HIPで利用でき、Visionは未対応 |
 
-## Using it
+Coderはコード以外や日本語を含むCJK言語で弱くなる場合があります。一般用途では全エキスパートを保持する
+Q2_0、IQ2_XS、IQ3_Sなども検討してください。モデル作者によるCoderのSWE-bench Verifiedの値は元モデルの91%です。
+Unslothの大きいモデルは、RAMが不足するとSSDからエキスパートを読みながら回答するため、NVMe SSDが有用です。
+[モデルの容量・測定値・対応状況](docs/MODELS.md)に詳細があります。
+[OrcaRouterのUncensored IQ3_XXS](docs/MODELS.md#orcarouter-uncensored-iq3_xxs)はメニューに含めず、手動の導入手順を使います。
 
-<p align="center"><img src="docs/media/runpagoda.png" width="900" alt="The Strata app's Monitor tab next to a coding agent"><br>
-<sub>The Strata app's <b>Monitor</b> (left) while a coding agent writes the pagoda garden from the video (right)</sub></p>
+<a id="how-fast-is-it"></a>
 
-- **In the browser:** open `http://127.0.0.1:8080`. It has **Chat**, a live **Monitor** of the model and your
-  GPU/CPU/RAM, and **About** with the settings and addresses.
-- **Your apps and coding agents:** add an "OpenAI-compatible" provider with the base URL
-  **`http://127.0.0.1:8080/v1`**. Any API key and any model name work.
-  - Apps that use Anthropic's API: `http://127.0.0.1:8080/v1/messages` (Claude Code:
-    `ANTHROPIC_BASE_URL=http://127.0.0.1:8080`).
-  - Codex CLI and other apps that use the OpenAI Responses API: `/v1/responses`
-    ([setup](docs/DETAILS.md#the-responses-api-and-codex-cli)).
-- **Thinking:** choose **off, low, medium or high** in the chat menu or in your app's "reasoning effort". Off is the
-  fastest. High is best for hard questions.
-- **Pictures:** say yes to "Images?" in setup. Then click **Picture** in the chat, or attach pictures in your app.
-  AMD cards read pictures on Linux through the processor; on Windows they can't yet.
-- **From your phone or another PC:** `START-HERE.bat --setup --host 0.0.0.0 --api-key <secret>`. Always set a key.
-- **One request at a time:** by default Strata answers one request, and the others wait. To answer several at once,
-  set `"parallel": 2` ([BATCHING.md](docs/BATCHING.md)). On a 12 GB card this makes each answer slower.
-- **Long prompts:** Strata reads the first message of a chat in full, about 1 minute per 30,000 tokens. Follow-up
-  messages start in seconds.
+## 速度の測定例
 
-More: [where your chats are stored](docs/INSTALL.md#where-things-are-stored), [the API](docs/DETAILS.md#using-it).
+以下は元のStrataに掲載された測定値です。GPU、CPU、RAM、エンジンのバージョン、モデルやコンテキスト長で結果は変わります。
+「回答生成」は出力速度、「入力処理」は32Kトークンの入力を読む速度です。トークンはモデルが扱うテキストの単位です。
 
-### Optional: more speed on one card when the whole model fits in RAM
+**NVIDIA：RTX 5070（12 GB）、Ryzen 5 7600、RAM 64 GB**
 
-Two opt-in settings (by RubenTorney, #1904 and #1905). They help when you run one graphics card and your RAM holds
-every expert (Strata's arena mode, for example Q2_0 or IQ3_XXS on a 64 GB PC). Open your config,
-`strata-<model>.json` in the Strata data folder ([where](docs/INSTALL.md#where-things-are-stored)), and add:
+| サイズ | 回答生成 | 入力処理 |
+| --- | ---: | ---: |
+| Q2_0 | 94トークン/秒 | 2,650トークン/秒 |
+| IQ2_XS | 79トークン/秒 | 2,090トークン/秒 |
+| IQ3_XXS | 62トークン/秒 | 1,750トークン/秒 |
+| IQ3_S | 53トークン/秒 | 1,620トークン/秒 |
+| Coder | 55トークン/秒 | 2,180トークン/秒 |
 
-- **Faster decode:** `"--adapt-async", "1"` to the `"args"` list. The expert cache then updates on a helper thread
-  instead of pausing the answer. Measured on an RTX 5070 (Windows, Q2_0): +4-5% decode, +7-10% on code and long
-  documents. Answers can differ slightly from the default (they stay the same from run to run).
-- **Faster prompt reading on Windows:** `"STRATA_PIN_BY_NEED": "1"` in the `"env"` block. Windows can lock only about
-  half the RAM for the graphics card; this locks the experts the card actually needs first. Measured on the RTX 5070:
-  +4.4% prompt reading.
+Q2_0はエンジン0.1.36、それ以外は0.1.26の測定です。4Kの回答生成と32Kの入力を使っています。
 
-```json
-"args": [ ..., "--adapt-async", "1" ],
-"env": { "STRATA_PIN_BY_NEED": "1" }
+**AMD：RX 9070 XT（16 GB）、Ryzen 9 3900X、RAM 47 GB、Linux**
+
+| サイズ | 回答生成 | 入力処理 |
+| --- | ---: | ---: |
+| Q2_0 | 60トークン/秒 | 1,160トークン/秒 |
+| IQ2_XS | 52トークン/秒 | 1,110トークン/秒 |
+| Coder | 44トークン/秒 | 1,420トークン/秒 |
+
+長いコンテキストでの結果やほかのGPUの測定値は[速度の詳細](docs/DETAILS.md#speed-measured)と
+[コミュニティーの測定結果](docs/COMMUNITY_BENCHMARKS.md)を参照してください。
+`BENCH.bat`（Linuxでは`./bench.sh`）で、自分のPCのチャット・入力処理・エージェント利用を測定できます。
+[測定と結果の共有方法](docs/COMMUNITY_BENCHMARKS.md#run-the-benchmark)も用意しています。
+
+<a id="using-it"></a>
+
+## アプリとの接続と使い方
+
+<p align="center"><img src="docs/media/runpagoda.png" width="900" alt="StrataのMonitorタブと、庭園のコードを書いているコーディングエージェント"><br>
+<sub>左はモデルとPCの状態を表示するMonitor、右は庭園を作成するコーディングエージェント</sub></p>
+
+- **ブラウザー：** `http://127.0.0.1:8080`を開きます。Chatで会話し、MonitorでGPU / CPU / RAMの状態を確認できます。
+- **OpenAI互換アプリ：** 接続先を`http://127.0.0.1:8080/v1`にします。APIキー未設定のローカル構成なら任意の値を使えます。キーを設定した構成では、そのキーを指定します。
+- **Anthropic互換アプリ：** `http://127.0.0.1:8080/v1/messages`を利用できます。Claude Codeでは`ANTHROPIC_BASE_URL=http://127.0.0.1:8080`を指定します。
+- **Responses APIを使うアプリ：** `/v1/responses`に対応します。[Codex CLIなどの接続手順](docs/DETAILS.md#the-responses-api-and-codex-cli)を参照してください。
+- **思考の量：** チャットやアプリの設定でoff / low / medium / highを選べます。offは思考を省略します。
+- **画像：** 対応する画像エンコーダーを導入し、VisionをONにして、チャットやアプリから画像を添付します。対応状況はGPUとバックエンドによって異なります。
+- **同時リクエスト：** 既定では1件ずつ処理します。複数の同時処理はモデル設定の`"parallel": 2`などで有効にできます（[同時処理の説明](docs/BATCHING.md)）。追加のVRAMを使います。
+
+別のPCやスマートフォンから利用する場合は、APIキーを設定してから公開先を変更します。
+
+```powershell
+$env:STRATA_API_KEY = "ここに十分長いAPIキーを設定"
+.\RUN-STRATA.bat --host 0.0.0.0
 ```
 
-Restart Strata (`START-HERE.bat` or `./setup.sh`) after the change. To undo, remove the two entries.
+ポートを変更した場合は、アプリ側のURLも同じ番号に変更してください。
+詳しくは[チャットの保存先](docs/INSTALL.md#where-things-are-stored)と[APIの説明](docs/DETAILS.md#using-it)を参照してください。
 
-## Something went wrong?
+<a id="optional-more-speed-on-one-card-when-the-whole-model-fits-in-ram"></a>
 
-- **My PC froze the first time Strata started.** This is normal while it loads the model. Wait, and don't close the
-  window. Still frozen after 10 minutes? Restart the PC, close other programs and try again, or pick a smaller size.
-- **It stopped while downloading or installing.** Run `START-HERE.bat` (or `./setup.sh`) again. It continues where
-  it stopped.
-- **It's very slow and the disk light keeps blinking, or it says "the engine stopped unexpectedly".** Your PC does
-  not have enough free RAM. Close other programs (browsers use a lot), or pick a smaller size (Q2_0 or IQ2_XS).
-- **It says port 8080 is already in use.** Strata is already running. Look for its window.
+## 任意の速度調整
 
-More problems and their fixes: [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md). Still stuck? Open an
-[issue](https://github.com/Niko1221/Strata/issues) and attach `strata-<model>.log` from the Strata folder. Found a
-security problem? Report it privately: [SECURITY.md](SECURITY.md).
+1枚のGPUを使い、全エキスパートがRAMに収まる構成では、次の設定を試せます。
+設定ファイルは**Strata-jtcフォルダーの`strata-<model>.json`**です。
 
-## How does it work?
+- **回答生成：** `"args"`に`"--adapt-async", "1"`を追加します。RTX 5070、Windows、Q2_0では生成速度が4〜5%、コードや長い文書で7〜10%向上した測定があります。既定の設定とは回答が少し変わる場合があります。
+- **Windowsでの入力処理：** `"env"`に`"STRATA_PIN_BY_NEED": "1"`を追加します。RTX 5070では入力処理が4.4%向上した測定があります。
 
-Models like this one usually run on servers with hundreds of gigabytes of graphics memory. Your graphics card has
-12-24 GB. Strata makes the model fit by **sharing the work across your whole PC**. Think of a kitchen: the things
-you use all the time stay on the counter, and the rest waits in the pantry.
+どちらもRubenTorneyによる任意の設定です（#1904、#1905）。JSONの既存の`args`や`env`に追加し、Strataを再起動します。
+元に戻すには追加した項目を削除します。詳しい構成条件と保存先は[インストール手順](docs/INSTALL.md)を参照してください。
 
-<p align="center"><img src="docs/media/how-it-works.svg" width="860" alt="The model's 24,576 experts: the busiest on the graphics card, all of them in RAM, a lookup table on the SSD"></p>
+## 更新とファイルの保存先
 
-- **The model is a team of 24,576 small specialists ("experts").** Each word needs only 10 of them.
-- **Your graphics card** keeps the few thousand experts that are used most often. **Your RAM** holds all of them,
-  and **your processor** works on the rest at the same time. **Your SSD** holds a big lookup table.
+Windowsの`UPDATE.bat`は、Gitで取得したコピーならコードを更新し、モデルを起動せずにエンジンや設定を確認します。
+ローカルに変更したファイルがある場合、Gitの更新が止まることがあります。更新前に起動中のモデルを停止してください。
+Linux / Macではコードを更新した後、`./setup.sh --update`で導入済みの環境を確認します。
 
-<p align="center"><img src="docs/media/guess-and-check.svg" width="860" alt="A small helper guesses the next words; the big model checks them all at once and keeps the right ones"></p>
+| 内容 | 保存先 |
+| --- | --- |
+| Python環境・エンジン | Strata-jtcフォルダーの`.venv`、`engine`など |
+| モデル・パック・MTP | 通常はStrata-jtcフォルダーの隣にある`Strata-data`。`--data-dir`で変更可能 |
+| モデルの起動設定・ログ | Strata-jtcフォルダーの`strata-<model>.json`、`strata-<model>.log` |
+| 起動用ファイル | `RUN-STRATA.bat`と、セットアップが作成する`run-<model>.bat` / `.sh` |
+| チャット履歴 | ブラウザーのローカルストレージ。別のブラウザーやプライベートウィンドウとは共有しない |
 
-- **Guess, then check:** a small helper guesses the next few words. The big model checks them all at once. You get
-  the same answer, 1.6-1.8x sooner.
-- **Long texts are read in big pieces** (up to 8,192 tokens at a time), at over 1,000 tokens per second.
+<a id="something-went-wrong"></a>
 
-The longer explanation: [docs/HOW_IT_WORKS.md](docs/HOW_IT_WORKS.md). Every part and its numbers:
-[the details](docs/DETAILS.md#how-it-works) and the [paper](docs/paper/Strata-Paper.pdf).
+## 困ったとき
 
-## Credits and license
+- **ダウンロード・導入が途中で止まる：** 初回なら`START-HERE.bat`、追加導入なら同じ引数で`ADD-MODEL.bat`を再実行します。
+- **SSL証明書のエラー：** OSに登録された会社CA、`SSL_CERT_FILE`、プロキシ設定を確認します。[証明書の手順](docs/UV_SETUP.md#会社のlanプロキシca証明書)を参照してください。
+- **起動するモデルが見つからない：** `RUN-STRATA.bat --list-models`で確認し、未導入なら`ADD-MODEL.bat`で追加します。
+- **VisionをONにできない：** 対象モデルの画像エンコーダーを導入済みか、バックエンドが対応するか確認します。
+- **PCが極端に遅い・ディスクアクセスが続く：** RAMの空きを確認し、ほかのアプリを閉じるか、小さいモデルを選びます。
+- **8080番ポートを使えない：** Strataやほかのサーバーが起動済みか確認します。`STRATA_PORT`または`--port`で別の番号に変更できます。
 
-The model is [Qwen3.8-Flash-Next](https://huggingface.co/Qwen/Qwen3.8-Flash-Next) by the Qwen team. It was
-compressed by [ISTA-DASLab](https://huggingface.co/ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF), UkisAI (Swift 1.5)
-and Unsloth. Strata uses parts of [llama.cpp / ggml](https://github.com/ggml-org/llama.cpp). All credits:
-[docs/HOW_IT_WORKS.md](docs/HOW_IT_WORKS.md#credits). Strata is open source under the [MIT License](LICENSE). A few
-parts and every model have their own licenses ([which ones](docs/HOW_IT_WORKS.md#license)).
+[トラブルシューティング](docs/TROUBLESHOOTING.md)にも対処方法があります。
+問題を報告する場合は、認証情報を除いた`strata-<model>.log`を添えて[元のStrataのissue](https://github.com/Niko1221/Strata/issues)を確認してください。
+セキュリティー上の問題は[SECURITY.md](SECURITY.md)の方法で非公開に報告します。
 
-## Support Strata
+<a id="how-does-it-work"></a>
 
-Strata is free and open source. If it is useful to you, you can support its development:
+## 仕組み
 
-<p align="center"><a href="https://buymeacoffee.com/strataengine"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" height="50"></a></p>
+Qwen3.8-Flash-Nextのような大きいモデルは、通常、大容量のGPUメモリーを使います。
+Strataは頻繁に使うエキスパートをGPUに置き、残りの処理をCPUとシステムRAMで分担します。
+RAMが足りない構成では、エキスパートの一部をSSDから必要に応じて読みます。
+
+<p align="center"><img src="docs/media/how-it-works.svg" width="860" alt="頻繁に使うエキスパートをGPUに置き、RAMとSSDを組み合わせる構成"></p>
+
+標準モデルには24,576個のエキスパートがあり、各トークンで使う一部を選択します。
+さらにMTPによる先読みでは、候補のトークンを本体がまとめて検証します。
+長い入力も分割してまとめて処理します。
+
+<p align="center"><img src="docs/media/guess-and-check.svg" width="860" alt="先読みした候補を大きいモデルがまとめて検証し、正しいものを採用する処理"></p>
+
+[仕組みの説明](docs/HOW_IT_WORKS.md)、[技術的な詳細と測定条件](docs/DETAILS.md#how-it-works)、
+[論文](docs/paper/Strata-Paper.pdf)を参照してください。
+
+<a id="credits-and-license"></a>
+
+## クレジットとライセンス
+
+元のモデルはQwenチームの[Qwen3.8-Flash-Next](https://huggingface.co/Qwen/Qwen3.8-Flash-Next)です。
+[ISTA-DASLab](https://huggingface.co/ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF)、UkisAI（Swift 1.5）、Unslothによる
+量子化・調整済みモデルを利用します。Strataは[llama.cpp / ggml](https://github.com/ggml-org/llama.cpp)の一部を使っています。
+[クレジットの一覧](docs/HOW_IT_WORKS.md#credits)も参照してください。
+
+Strata本体は[MITライセンス](LICENSE)です。一部のコードと各モデルには別のライセンスがあります。
+利用するモデルごとに[ライセンスの説明](docs/HOW_IT_WORKS.md#license)を確認してください。
+
+<a id="support-strata"></a>
+
+## 元のStrataの開発を支援する
+
+元のStrataは無料のオープンソースプロジェクトです。開発を支援する場合は、作者のページを利用できます。
+
+<p align="center"><a href="https://buymeacoffee.com/strataengine"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="元のStrataの作者にコーヒー代を支援" height="50"></a></p>

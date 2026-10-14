@@ -12,11 +12,11 @@ What the first run does (each step is skipped when it is already done):
 
   1. checks your PC: NVIDIA or AMD GPU and driver, RAM, CPU, free disk space
   2. asks the questions
-  3. installs the Python packages it needs into .venv (numpy, jinja2, ..., and NVIDIA's CUDA libraries)
+  3. syncs the Python packages into .venv from uv.lock (including the selected CUDA libraries)
   4. gets the Strata engine: a ready-made build for RTX 20/30/40/50 cards (no compiler needed); if none fits your PC,
      it installs the build tools (asks first) and compiles the engine for your GPU.  AMD (--backend hip, chosen by
      itself on a PC with no usable NVIDIA card): the ready-made HIP engine on Windows, compiled here on Linux
-  5. downloads the model from Hugging Face (resumable), and the vision encoder if you want images
+  5. downloads the model with huggingface-hub (resumable), and the vision encoder if you want images
   6. prepares the model for Strata and fetches the MTP draft layer (~5 GB, from the original Qwen checkpoint)
   7. writes run-<model>.bat / run-<model>.sh and starts the model
 
@@ -55,6 +55,7 @@ import textwrap
 import time
 import urllib.error
 import urllib.request
+import urllib.parse
 import zipfile
 from pathlib import Path
 
@@ -196,8 +197,7 @@ ENGINE12_DIR = "engine-cuda12"
 MIN_ENGINE = (0, 1, 44, 1)             # versions compare all numbers; v0.1.44.1: CPUs without AVX2 start again (#2324: an illegal instruction before main in the NVFP4 CPU rows), the CUDA 12.0/12.1 toolkits build (#2322), a crashed engine start is named instead of retried as a GPU runtime start, Mac M2 (#2323); v0.1.44: UD-Q4/Q5/Q6_K_XL and Q8_0 Unsloth files in setup (K-quant experts, MMQ prompt library strata_kq), NVFP4 packs, Qwen3.6-35B-A3B, Intel Arc A-series kernels, the pipelined-decode and latency work; v0.1.43.1: the adaptive overlap no longer collapses decode on pinned-host desktops (#1964 #1975), Windows PLE mmap stall (#1984), pinned prompt uploads (#1996), the I/O watchdog allowance; v0.1.43: adaptive-tier copies overlap on CUDA, P100 (sm_60) kernel tables, RDNA4 (gfx1200/gfx1201) defaults (route tail skip, measured PCIe share, 16K prompt chunks, fused IQ3 prompt experts); v0.1.42.1: the GGUF-in-place file tier on Windows unmaps every shard, dual-socket starts judge each NUMA node and STRATA_DROP_CACHE_ON_EXIT, tools/strata_bench.py; v0.1.42: STRATA_ROUTE_TAIL_SKIP=7 default on CUDA (+13-16% decode), the AMD 2-GPU checkpoint fix (H13), Phase 2 fixes and opt-ins; v0.1.41.1 (folded into 0.1.42): the #1576 card order, #1616 stage size, #1595 CPU share, #1630/#1607 Windows HIP chunk cap and commit-limit warning, #1603 parallel-request bookkeeping; v0.1.41: CPU prefill share on by default (NVIDIA, chunks < 1024), --batch-groups auto, the file tier read in batches on Windows, Pascal decode fix, per-arch tables; v0.1.40.3: the #1357 MTP router guard, the #1376 Windows HIP cache floor, #461 runtime DLLs, Intel A750 first-request fix; v0.1.40.2: F4 verify windows, the Linux file tier (#1194), the stager wait (#1057), #1264/#1201/#1139 fixes, opt-in CPU share (#1282), Intel Arc; v0.1.40: --resident-experts on a layer split with the split+resident variant (#848), --kv k8v4 with KV streaming (#711); v0.1.39: the #577 file-tier regression fixed, the OpenAI Responses API (#451, Codex), a reply stuck on one token ended (#606), the head before the arena (#620), effort_position (#458), --vram-reserve hot resize opt-in (#533), PR batch; v0.1.38: prompts faster (one gather per expert group #372, the first chunk's PLE rows beside layer 0 #374, DeltaNet three heads per thread #413), --kv q4_0 prompts on tensor cores (#452), Q5_0 experts on the GPU (#473), IQ4_XS on AVX-2 (#415), unbuffered expert loading on Windows (#357 #362), --peer-device (#531), a 6 GB card starts (#496), PR batch; v0.1.37: a silent engine is restarted (#481), Windows AMD counts the desktop's VRAM (#380 #377 #497), a steadier PCIe probe (#485), fixes #496 #495 #498 #505 #493; v0.1.36: a cancelled prompt logged as read so far (#471), the draft-head hint (#474), UPDATE.bat (#475), --expert-profile-save (#477); v0.1.35: Windows AMD uses its bundled HIP runtime (#468 #461), the low-RAM resident mode on Windows 32 GB (#467), fixes #460 #459 #446 #447 #457 #448 #444; v0.1.34: AMD on Windows (a ready-made HIP engine), an MCP server for AI assistants (tools/strata_mcp.py), a shorter README; v0.1.33: a portable image encoder again (#411 #412), setup recommends instead of forcing (#406 #403 #364 #384), fixes #352 #365 #369 #371 #375 #393 #408 #414; v0.1.32: split prompts faster (#340), AMD router +12%, Unsloth Q4 in setup, faster Q4 prompts, #326/#327/#342/#344 fixes, PR batch; v0.1.31: Unsloth UD-Q4_K_XL (experimental), GGUF-in-place low-RAM mode, Windows GGUF load 2x, server race + tokenizer fixes, AMD intrinsics; v0.1.30: short prompts faster (streaming from 1024 tokens), resident low-RAM variant, multi-GPU session carve, RDNA4; v0.1.29: sampled answers faster (split top-k), #154 correctness fixes; v0.1.28: the expert cache reserves the draft head, a cancelled request no longer fails the next; v0.1.27: RTX 20 (sm_75) in the ready-made engine, the HIP build without CUDA headers; v0.1.26: the draft layer's prompt pass in batches; v0.1.25: faster prompts (grouping off the copy engine, fused hyper-connection kernels), AMD HIP backend, --kv k8v4; v0.1.24: long prompts faster (QSA select on tensor cores); v0.1.23: image requests honor sampling, 8 GB cards start, batched verify window; v0.1.22: faster prompts (tensor-core attention), multi-GPU across images/steering/KV streaming; v0.1.21: multi-GPU layer split (--gpus); v0.1.20: system-prompt checkpoint, PCIe probe, hit rate; v0.1.19: penalties
 # KV bytes per context token and attention layer: 8-bit 1056, rotated 4-bit 576, hybrid K8V4 (8-bit K, 4-bit V) 816
 KV_CELL_BYTES = {"q4_0": 576, "k8v4": 816}
-PY_PACKAGES = ["numpy", "jinja2", "regex", "pyyaml", "tqdm", "requests", "cmake", "ninja", "pillow", "psutil"]
-REQUIREMENTS = ROOT / "requirements.txt"   # the same packages and their dependencies, pinned (#214)
+REQUIREMENTS = ROOT / "requirements.txt"   # compatibility export; pyproject.toml + uv.lock are authoritative
 
 # NVFP4 experts (MODEL-UPDATE Phase 4; the engine path is ported from sergqwer/strata-nvfp4, MIT).  Ready-made Strata
 # packs on Hugging Face by the fork's author: nothing is converted here.  Every file is pinned by its upload's commit,
@@ -1628,6 +1628,9 @@ def download(url, dst: Path, what=None):
         else:
             warn(f"{what or dst.name}: ModelScope does not answer; downloading it from {hf_endpoint()}")
             ms = None
+    if ms is None and HF_FILE.match(url):
+        download_huggingface(url, dst, what)
+        return
     part = dst.with_name(dst.name + ".part")
     total = 0
     for attempt in range(5):
@@ -1696,6 +1699,84 @@ def download(url, dst: Path, what=None):
             warn(f"{what or dst.name}: ModelScope publishes no SHA-256 for it: the file is not verified")
         mark(dst)
     ok(f"{what or dst.name} downloaded")
+
+
+def download_huggingface(url: str, dst: Path, what=None):
+    """Hub's resumable downloader, with the pinned revision and the chosen mirror."""
+    from strata_network import configure_network, network_hint
+    configure_network()
+    from huggingface_hub import hf_hub_download
+    from huggingface_hub.errors import HfHubHTTPError, RemoteEntryNotFoundError, RevisionNotFoundError
+    import httpx
+
+    match = HF_FILE.match(url)
+    repo, filename = match.group("repo"), urllib.parse.unquote(match.group("path"))
+    revision = urllib.parse.unquote(url.split("/resolve/", 1)[1].split("/", 1)[0])
+    endpoint = url.split("/" + repo + "/resolve/", 1)[0]
+    host = urllib.parse.urlsplit(endpoint).hostname or "Hugging Face"
+    # Keep partial downloads next to the destination, without a second full copy
+    # in the user's global HF cache. A completed file is moved into place.
+    local_dir = dst.parent / ".cache" / "strata-hub" / dst.name
+    for attempt in range(5):
+        try:
+            if resume_hub_partial(repo, filename, revision, endpoint, local_dir, dst):
+                ok(f"{what or dst.name} already downloaded")
+                return
+            path = Path(hf_hub_download(repo_id=repo, filename=filename, revision=revision,
+                                       endpoint=endpoint, local_dir=local_dir, etag_timeout=60,
+                                       library_name="strata"))
+            path.replace(dst)
+            dst.with_name(dst.name + ".part").unlink(missing_ok=True)
+            mark(dst)
+            ok(f"{what or dst.name} downloaded")
+            return
+        except (RevisionNotFoundError, RemoteEntryNotFoundError):
+            if re.fullmatch(r"[0-9a-f]{40}", revision):
+                warn(f"{what or dst.name}: not at the pinned revision any more; downloading the repository's "
+                     "current file")
+                revision = "main"
+                continue
+            fail(f"cannot find {what or dst.name} on {host}", network_hint() + source_hint(url))
+        except (OSError, httpx.HTTPError, HfHubHTTPError) as e:
+            # Exception text can contain signed URLs or proxy credentials.
+            if attempt == 4:
+                fail(f"cannot download {what or dst.name} from {host} ({type(e).__name__})",
+                     network_hint() + source_hint(url))
+            warn(f"download interrupted ({type(e).__name__}); retrying in 5 s ...")
+            time.sleep(5)
+    fail(f"could not finish downloading {dst.name}", network_hint())
+
+
+def resume_hub_partial(repo, filename, revision, endpoint, local_dir, dst):
+    """Reuse files from the older urllib downloader when Hub's metadata matches."""
+    part = dst.with_name(dst.name + ".part")
+    if not part.exists() and not dst.exists():
+        return False
+    from huggingface_hub import get_hf_file_metadata, hf_hub_url
+    from huggingface_hub._local_folder import get_local_download_paths
+    from filelock import FileLock
+
+    meta = get_hf_file_metadata(hf_hub_url(repo, filename, revision=revision, endpoint=endpoint), timeout=60)
+    if meta.size is None or meta.etag is None:
+        return False
+    if dst.exists() and dst.stat().st_size == meta.size:
+        mark(dst)
+        return True
+    if not part.exists() or part.stat().st_size > meta.size:
+        return False
+    if part.stat().st_size == meta.size:
+        part.replace(dst)
+        mark(dst)
+        return True
+    # Hub v1's local download paths include the ETag, so its HTTP Range resume
+    # continues in this exact file. Keep its lock while transferring an old .part.
+    paths = get_local_download_paths(local_dir, filename)
+    with FileLock(str(paths.lock_path)):
+        incomplete = paths.incomplete_path(meta.etag)
+        incomplete.parent.mkdir(parents=True, exist_ok=True)
+        if not incomplete.exists() or incomplete.stat().st_size < part.stat().st_size:
+            part.replace(incomplete)
+    return False
 
 
 def whole_shard(s: Path) -> bool:
@@ -2020,31 +2101,26 @@ def requirement_lines(path: Path | None = None) -> list[str]:
     return lines
 
 
-def _installed(name: str) -> bool:
-    try:
-        import importlib.metadata as md
-        md.distribution(name)
-        return True
-    except Exception:
-        return False
+def uv_command() -> str:
+    """uv on PATH or in the local one-click install; Python packages stay in .venv."""
+    candidates = [os.environ.get("STRATA_UV_EXE"), shutil.which("uv"),
+                  ROOT / ".uv" / ("uv.exe" if WIN else "uv"),
+                  Path.home() / ".local" / "bin" / ("uv.exe" if WIN else "uv")]
+    for candidate in candidates:
+        if candidate and Path(candidate).is_file():
+            return str(candidate)
+    fail("uv is not installed", "run START-HERE.bat (Windows) or ./setup.sh; see docs/UV_SETUP.md")
 
 
-def pip_install(packages, what):
-    """pip install into .venv, skipped when the same list was installed before.  An install from before the pinned
-    requirements (#214) recorded bare names: those packages are kept as they are (nothing is reinstalled), and the
-    pinned dependencies it already has count as installed."""
-    stamp = Path(sys.prefix) / ".strata-pip.json"
-    have = json.loads(stamp.read_text(encoding="utf-8")) if stamp.exists() else []
-    bare = {p.lower() for p in have if req_name(p) == p.lower()}
-    need = [p for p in packages if p not in have and req_name(p) not in bare
-            and not (bare and "==" in p and _installed(req_name(p)))]
-    if not need:
-        ok(f"{what} already installed")
-        return
-    say(f"  Installing {what} ...")
-    run([sys.executable, "-m", "pip", "install", "--quiet", "--disable-pip-version-check", *need])
-    stamp.write_text(json.dumps(sorted(set(have) | set(need)), indent=0))
-    ok(f"{what} installed")
+def sync_dependencies(extra=None):
+    """Sync the lock, retaining other GPU runtimes installed for this PC."""
+    cmd = [uv_command(), "sync", "--locked", "--inexact", "--no-dev", "--project", str(ROOT)]
+    if extra:
+        cmd += ["--extra", extra]
+    run(cmd)
+    from strata_network import configure_network
+    configure_network()
+    ok("Python packages synchronized with uv.lock" + (f" ({extra})" if extra else ""))
 
 
 def cuda_lib_dirs(toolkit=13):
@@ -2908,9 +2984,9 @@ def rocm_root(archs):
             warn(note)
     if have.get("version") != wheel or have.get("index") != index:
         say(f"  Installing ROCm {wheel} for AMD GPUs into .venv (AMD's TheRock wheels, ~10 GB, no sudo) ...")
-        pip = [sys.executable, "-m", "pip", "install", "--quiet", "--disable-pip-version-check", "--index-url", index]
+        pip = [uv_command(), "pip", "install", "--python", sys.executable, "--quiet", "--default-index", index]
         if have.get("version") == wheel:               # the same version for another GPU family: its own libraries
-            run(pip + ["--force-reinstall", "--no-deps", f"rocm=={wheel}"])
+            run(pip + ["--reinstall", "--no-deps", f"rocm=={wheel}"])
         run(pip + [f"rocm[libraries,devel]=={wheel}"])
         stamp.write_text(json.dumps({"version": wheel, "index": index}))
     sdk = Path(sys.executable).parent / "rocm-sdk"
@@ -3689,11 +3765,8 @@ def update_installed_engine(url_base, toolkit=None) -> None:
 
 
 def pip_cuda_libs(toolkit=13) -> None:
-    """NVIDIA's cuBLAS and CUDA runtime for a ready-made engine, from pip: CUDA 13's, or the CUDA 12 engine's."""
-    if int(toolkit) == 12:
-        pip_install(CUDA12_WHEELS, "NVIDIA CUDA 12 libraries for the experimental engine (cuBLAS, CUDA runtime; ~0.7 GB)")
-    else:
-        pip_install(CUDA_WHEELS, "NVIDIA CUDA libraries (cuBLAS, CUDA runtime; ~0.4 GB)")
+    """NVIDIA's cuBLAS and CUDA runtime, from the matching uv extra."""
+    sync_dependencies("cuda12" if int(toolkit) == 12 else "cuda13")
 
 
 CUDA_SM120_SUSPECT = (13, 2)   # #892 #968: nvcc 13.2.0 / 13.2.1 (build 13.2.51) for sm_120 made garbage answers (IQ1_S / IQ2_S / IQ3_S) and prompts
@@ -3827,7 +3900,7 @@ def install_build_tools(gpu, yes):
 def cmake_build(src, bdir, target, defs, vcvars, bat_name):
     cmake, ninja = find_tool("cmake"), find_tool("ninja")
     if cmake is None or ninja is None:
-        fail("cmake / ninja not found after installing them", "run: .venv python -m pip install cmake ninja")
+        fail("cmake / ninja not found after installing them", "run: uv sync --locked")
     conf = [cmake, "-G", "Ninja", f"-DCMAKE_MAKE_PROGRAM={ninja}", "-S", str(src), "-B", str(bdir),
             "-DCMAKE_BUILD_TYPE=Release", *defs]
     build = [cmake, "--build", str(bdir), "--target", target, "-j", str(max(2, (os.cpu_count() or 4) // 2))]
@@ -4831,8 +4904,7 @@ def update_install(have: list, a) -> int:
         say("  No model is installed in this Strata folder yet: run START-HERE.bat (Linux: ./setup.sh) to set it up -")
         say("  it finds an earlier install's model files next to it and reuses them.")
         return 0
-    pip_install(requirement_lines() if REQUIREMENTS.exists() else PY_PACKAGES,
-                "numpy, jinja2, regex, pyyaml, tqdm, requests, cmake, ninja, pillow, psutil")
+    sync_dependencies()
     if not a.build:
         update_installed_engine(a.prebuilt)
     mtp_done: set = set()
@@ -5391,8 +5463,14 @@ def write_run_script(model, cfg_path, port, open_browser=True):
              "--port", str(port)] + (["--open"] if open_browser else [])
     if WIN:
         script = ROOT / f"run-{model.lower()}.bat"
-        script.write_text("@echo off\r\ntitle Strata " + model + "\r\ncd /d \"" + str(ROOT) + "\"\r\n" +
-                          " ".join(f'"{x}"' for x in serve) + "\r\nif errorlevel 1 pause\r\n", encoding="utf-8")
+        text = ("@echo off\nchcp 65001 >nul\nsetlocal\nrem Edit these settings for this model; see docs/UV_SETUP.md.\n"
+                f'set "STRATA_MODEL={cfg_path}"\n'
+                'set "STRATA_VISION=keep"\nset "STRATA_CONTEXT=auto"\n'
+                f'set "STRATA_PORT={port}"\nset "STRATA_GPU=auto"\n'
+                f'set "STRATA_BROWSER={"yes" if open_browser else "no"}"\n'
+                'set "STRATA_HOST=127.0.0.1"\n'
+                f'call "{ROOT / "RUN-STRATA.bat"}" %*\nexit /b %ERRORLEVEL%\n')
+        script.write_bytes(text.replace("\n", "\r\n").encode("utf-8"))
     else:
         script = ROOT / f"run-{model.lower()}.sh"
         script.write_text("#!/bin/sh\ncd \"" + str(ROOT) + "\"\nexec " + " ".join(f'"{x}"' for x in serve) + "\n",
@@ -5592,8 +5670,7 @@ def install_own_path(a, family, gpu, hip, amd, cuda_tk, multi, port, ram, adopte
         fail(f"not enough free disk space in {folder}: need ~{left + 1:.0f} GB", "use --models-dir on a bigger drive")
 
     step(3, "Python packages")
-    pip_install(requirement_lines() if REQUIREMENTS.exists() else PY_PACKAGES,
-                "numpy, jinja2, regex, pyyaml, tqdm, requests, cmake, ninja, pillow, psutil")
+    sync_dependencies()
 
     step(4, "the Strata engine")
     llama, eng, meta, lib_dirs, gpu, _ = engine_step(a, gpu, hip, amd, cuda_tk, "none")
@@ -5653,6 +5730,7 @@ def install_own_path(a, family, gpu, hip, amd, cuda_tk, multi, port, ram, adopte
     say(f"  API (OpenAI):     http://127.0.0.1:{port}/v1   (any API key; model name: anything)")
     say(f"  API (Anthropic):  http://127.0.0.1:{port}/v1/messages")
     say(f"  Next time:        just run {'START-HERE.bat' if WIN else './setup.sh'} (or {script.name}) - it starts right away")
+    say("  別のモデルを追加: " + ("ADD-MODEL.bat" if WIN else "./setup.sh --setup --no-start"))
     if a.no_start:
         return 0
     return start(cfg_path, port)
@@ -6425,8 +6503,7 @@ def main() -> int:
 
     # ---- 3. python packages
     step(3, "Python packages")
-    pip_install(requirement_lines() if REQUIREMENTS.exists() else PY_PACKAGES,
-                "numpy, jinja2, regex, pyyaml, tqdm, requests, cmake, ninja, pillow, psutil")
+    sync_dependencies()
 
     # ---- 4. the engine
     step(4, "the Strata engine")
@@ -6830,6 +6907,7 @@ def main() -> int:
         say(f"  Other devices:    the server window prints this PC's address (http://<IP>:{port}/)"
             + ("" if a.api_key else " - no API key set: anyone on your network can use it"))
     say(f"  Next time:        just run {'START-HERE.bat' if WIN else './setup.sh'} (or {script.name}) - it starts right away")
+    say("  別のモデルを追加: " + ("ADD-MODEL.bat" if WIN else "./setup.sh --setup --no-start"))
     if vision != "none":
         say("  Images:           send them in the chat page, in chat.py (/image <path>) or over the API")
     if cfg.get("images"):
@@ -6851,9 +6929,24 @@ def main() -> int:
     return start(cfg_path, port)
 
 
+def entrypoint():
+    """Direct `python setup.py` also uses the uv project environment."""
+    if Path(sys.prefix).resolve() != (ROOT / ".venv").resolve():
+        env = os.environ.copy()
+        env["UV_PROJECT_ENVIRONMENT"] = str(ROOT / ".venv")
+        return subprocess.call([uv_command(), "run", "--locked", "--no-dev", "--project", str(ROOT),
+                                "python", str(ROOT / "setup.py"), *sys.argv[1:]], env=env)
+    from strata_network import configure_network, network_hint
+    try:
+        configure_network()
+    except (OSError, ValueError) as e:
+        fail(f"TLS certificate configuration failed ({type(e).__name__})", network_hint())
+    return main()
+
+
 if __name__ == "__main__":
     try:
-        sys.exit(main())
+        sys.exit(entrypoint())
     except KeyboardInterrupt:
         say("\nstopped.")
         sys.exit(1)

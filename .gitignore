@@ -27,12 +27,16 @@ td.log
 
 # created by setup.py on the user's machine
 /.venv/
+/.uv/
+/.uv-cache/
+/.test-tmp/
 /build/
 /third_party/llama.cpp
 /models/
 /packs/
 /mtp/
 /run-*.bat
+!/RUN-STRATA.bat
 /run-*.sh
 /strata-*.json
 /strata-*.log

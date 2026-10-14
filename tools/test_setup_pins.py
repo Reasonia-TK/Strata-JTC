@@ -88,21 +88,28 @@ class HuggingFacePins(unittest.TestCase):
     def test_a_gone_revision_downloads_the_current_file(self):
         seen = []
 
-        def urlopen(req, timeout=None):
-            seen.append((req.get_method(), req.full_url))
-            if "/resolve/main/" not in req.full_url:
-                raise not_found(req.full_url)
-            return Response(b"model bytes", status=200)
+        from huggingface_hub.errors import RevisionNotFoundError
+        import httpx
+
+        def hub_download(**kw):
+            seen.append(kw["revision"])
+            if kw["revision"] != "main":
+                response = httpx.Response(404, request=httpx.Request("HEAD", "https://huggingface.co/missing"))
+                raise RevisionNotFoundError("missing revision", response=response)
+            result = Path(kw["local_dir"]) / kw["filename"]
+            result.parent.mkdir(parents=True, exist_ok=True)
+            result.write_bytes(b"model bytes")
+            return str(result)
 
         # the pinned Hugging Face path itself (setup's --source huggingface; auto may pick ModelScope)
-        with tempfile.TemporaryDirectory() as d, mock.patch.object(setup.urllib.request, "urlopen", urlopen), \
+        with tempfile.TemporaryDirectory() as d, mock.patch("huggingface_hub.hf_hub_download", hub_download), \
+                mock.patch("strata_network.configure_network"), \
                 mock.patch.dict(setup.os.environ, {"STRATA_SOURCE": "huggingface"}):
             dst = Path(d) / "m.gguf"
             _, out = quiet(setup.download, setup.FAMILIES["qwen"]["mmproj_hf"] + "m.gguf", dst)
             self.assertEqual(dst.read_bytes(), b"model bytes")
         self.assertIn("not at the pinned revision any more", out)
-        self.assertEqual([m for m, _ in seen], ["HEAD", "HEAD", "GET"])
-        self.assertTrue(all("/resolve/main/" in u for _, u in seen[1:]))
+        self.assertEqual(seen, [setup.HF_REVISIONS["ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF"], "main"])
 
     def test_a_complete_part_is_finished_without_a_request(self):
         """A .part with every byte (setup stopped between the last byte and the rename): renamed, not resumed with a
@@ -312,46 +319,37 @@ class Requirements(unittest.TestCase):
     def test_every_package_is_pinned(self):
         lines = setup.requirement_lines()
         names = {setup.req_name(x) for x in lines}
-        for p in setup.PY_PACKAGES:
+        for p in ("numpy", "jinja2", "requests", "huggingface-hub", "httpx", "truststore", "cmake", "ninja"):
             self.assertIn(p, names)
         for x in lines:
             self.assertIn("==", x, x)
         self.assertEqual(setup.req_name('numpy==2.5.3; python_version >= "3.12"'), "numpy")
         self.assertEqual(setup.req_name("charset_normalizer==3"), "charset-normalizer")
 
-    def pip(self, stamp, packages, installed=()):
-        ran = []
-        with tempfile.TemporaryDirectory() as d:
-            if stamp is not None:
-                (Path(d) / ".strata-pip.json").write_text(json.dumps(stamp))
-            with mock.patch.object(setup.sys, "prefix", d), \
-                    mock.patch.object(setup, "run", lambda cmd, **kw: ran.append(cmd)), \
-                    mock.patch.object(setup, "_installed", lambda name: name in installed):
-                quiet(setup.pip_install, packages, "the packages")
-            after = json.loads((Path(d) / ".strata-pip.json").read_text()) if ran else stamp
-        return [c for cmd in ran for c in cmd if "==" in c or c in setup.PY_PACKAGES], after
+    def sync(self, extra=None):
+        with mock.patch.object(setup, "uv_command", return_value="uv"), \
+                mock.patch.object(setup, "run") as run, mock.patch("strata_network.configure_network"):
+            quiet(setup.sync_dependencies, extra)
+        return run.call_args.args[0]
 
-    def test_fresh_install_gets_every_pin(self):
-        lines = setup.requirement_lines()
-        ran, stamp = self.pip(None, lines)
-        self.assertEqual(ran, lines)
-        self.assertEqual(sorted(stamp), sorted(lines))
-        self.assertEqual(self.pip(stamp, lines)[0], [])                       # the second run: nothing
+    def test_core_sync_uses_lock_and_preserves_other_gpu_libraries(self):
+        cmd = self.sync()
+        self.assertEqual(cmd[:5], ["uv", "sync", "--locked", "--inexact", "--no-dev"])
+        self.assertNotIn("--extra", cmd)
 
-    def test_an_install_from_before_the_pins_is_left_alone(self):
-        lines = setup.requirement_lines()
-        legacy = sorted(setup.PY_PACKAGES) + ["nvidia-cublas==13.0.2.14"]
-        deps = {"markupsafe", "certifi", "charset-normalizer", "idna", "urllib3", "colorama"}
-        self.assertEqual(self.pip(legacy, lines, installed=deps)[0], [])
-        missing = [p for p in legacy if p != "psutil"]                         # an older list without psutil
-        ran, _ = self.pip(missing, lines, installed=deps)
-        self.assertEqual(ran, ["psutil==7.2.2"])
+    def test_cuda_uses_optional_locked_dependencies(self):
+        with mock.patch.object(setup, "sync_dependencies") as sync:
+            setup.pip_cuda_libs(12)
+            sync.assert_called_once_with("cuda12")
+            sync.reset_mock()
+            setup.pip_cuda_libs(13)
+            sync.assert_called_once_with("cuda13")
+        self.assertEqual(self.sync("cuda13")[-2:], ["--extra", "cuda13"])
 
-    def test_a_changed_pin_is_installed(self):
-        lines = setup.requirement_lines()
-        old = [x.replace("tqdm==4.70.1", "tqdm==4.60.0") for x in lines]
-        ran, _ = self.pip(old, lines)
-        self.assertEqual(ran, ["tqdm==4.70.1"])
+    def test_a_legacy_pip_stamp_cannot_skip_the_lock(self):
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(setup.sys, "prefix", d):
+            (Path(d) / ".strata-pip.json").write_text('["numpy"]')
+            self.assertIn("--locked", self.sync())
 
 
 if __name__ == "__main__":

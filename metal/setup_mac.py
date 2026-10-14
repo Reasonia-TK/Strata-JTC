@@ -565,7 +565,7 @@ def main(argv=None) -> int:
 
     # ---- 3. Python packages (cmake and ninja among them: the engine build's tools)
     S.step(3, "Python packages")
-    S.pip_install(S.requirement_lines() if S.REQUIREMENTS.exists() else S.PY_PACKAGES, "numpy, jinja2, ..., cmake, ninja")
+    S.sync_dependencies()
 
     # ---- 4. the engine
     S.step(4, "the Strata engine (Metal)")

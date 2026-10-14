@@ -191,10 +191,13 @@ class NoBrowser(unittest.TestCase):
     def test_run_script(self):
         with tempfile.TemporaryDirectory() as d, unittest.mock.patch.object(setup, "ROOT", Path(d)):
             text = lambda p: p.read_text(encoding="utf-8")   # noqa: E731
-            self.assertIn('"--open"', text(setup.write_run_script("Q2_0", Path(d) / "strata-q2_0.json", 8080)))
+            enabled = text(setup.write_run_script("Q2_0", Path(d) / "strata-q2_0.json", 8080))
+            self.assertIn('STRATA_BROWSER=yes' if setup.WIN else '"--open"', enabled)
             script = setup.write_run_script("Q2_0", Path(d) / "strata-q2_0.json", 8080, False)
             self.assertNotIn("--open", text(script))
-            self.assertIn('"--port" "8080"', text(script))
+            self.assertIn('STRATA_PORT=8080' if setup.WIN else '"--port" "8080"', text(script))
+            if setup.WIN:
+                self.assertIn('STRATA_BROWSER=no', text(script))
 
     def start_cmd(self, cfg, keep=None):
         with tempfile.TemporaryDirectory() as d:

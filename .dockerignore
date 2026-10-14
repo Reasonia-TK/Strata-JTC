@@ -4,6 +4,9 @@
 
 # local Python environment (rebuilt in the image)
 .venv/
+.uv/
+.uv-cache/
+.test-tmp/
 __pycache__/
 *.pyc
 .pytest_cache/
@@ -25,3 +28,4 @@ strata-*.json
 strata-*.txt
 run-*.sh
 run-*.bat
+!RUN-STRATA.bat

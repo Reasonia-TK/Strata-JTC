@@ -187,10 +187,11 @@ class HandOver(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 setup.main()
 
-    def test_setup_sh_fetches_a_pinned_python_on_macos_only(self):
+    def test_setup_sh_uses_uv_for_python_on_linux_and_macos(self):
         sh = (ROOT / "setup.sh").read_text(encoding="utf-8")
-        self.assertIn('[ "$(uname -s)" = Darwin ]', sh)
-        self.assertIn("83dcb04777c798bd95f3687acf9ae84b09860272ee6bdfb05be8bcf9447f75b8", sh)
+        self.assertIn('exec "$STRATA_UV_EXE" run --locked --no-dev python setup.py "$@"', sh)
+        self.assertIn("UV_PYTHON_PREFERENCE=only-managed", sh)
+        self.assertNotIn("python-build-standalone/releases/download", sh)
 
 
 class RepackGuard(unittest.TestCase):

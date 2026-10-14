@@ -59,9 +59,9 @@ COPY . .
 ARG CUDA_ARCHITECTURES=75;80;86;89;120
 ARG BUILD_VISION=1
 
-RUN python3 -m venv .venv \
-    && .venv/bin/pip install --no-cache-dir --upgrade pip \
-    && .venv/bin/pip install --no-cache-dir -r requirements.txt \
+RUN curl -LsSf https://astral.sh/uv/install.sh -o /tmp/uv-install.sh \
+    && UV_INSTALL_DIR=/usr/local/bin UV_NO_MODIFY_PATH=1 sh /tmp/uv-install.sh \
+    && uv sync --locked --no-dev --python python3 \
     && chmod +x setup.sh docker-entrypoint.sh
 
 # llama.cpp at the pinned commit, then the engine and the image encoder, built
@@ -72,6 +72,8 @@ RUN python3 -m venv .venv \
 RUN .venv/bin/python - <<'PYEOF'
 import json, os, pathlib, shutil
 import setup
+from strata_network import configure_network
+configure_network()
 
 llama = setup.get_llama_cpp()
 nvcc, _ = setup.find_nvcc()
