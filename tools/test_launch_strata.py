@@ -123,15 +123,18 @@ class Launcher(unittest.TestCase):
 
     @unittest.skipUnless(os.name == "nt", "Windows batch execution")
     def test_windows_runner_dry_run_reaches_the_launcher(self):
-        with mock.patch.dict(os.environ, {"UV_CACHE_DIR": str(ROOT / ".uv-cache")}):
-            result = subprocess.run(["cmd", "/d", "/c", str(ROOT / "RUN-STRATA.bat"),
-                                     "--model", str(self.path), "--vision", "off", "--context", "65536",
-                                     "--port", "8081", "--gpu", "auto", "--browser", "no", "--dry-run"],
-                                    capture_output=True, text=True, encoding="utf-8", timeout=30)
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("--max-context 65536", result.stdout)
-        self.assertIn("127.0.0.1:8081", result.stdout)
-        self.assertIn("Vision: off", result.stdout)
+        for flags in (0, subprocess.CREATE_NO_WINDOW):
+            with self.subTest(flags=flags), mock.patch.dict(os.environ, {"UV_CACHE_DIR": str(ROOT / ".uv-cache")}):
+                result = subprocess.run(["cmd", "/d", "/c", str(ROOT / "RUN-STRATA.bat"),
+                                         "--model", str(self.path), "--vision", "off", "--context", "65536",
+                                         "--port", "8081", "--gpu", "auto", "--browser", "no", "--dry-run"],
+                                        capture_output=True, text=True, encoding="utf-8", timeout=30,
+                                        stdin=subprocess.DEVNULL, creationflags=flags)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(result.stderr, "")  # 日本語コメントが別のコマンドとして実行されない。
+            self.assertIn("--max-context 65536", result.stdout)
+            self.assertIn("127.0.0.1:8081", result.stdout)
+            self.assertIn("Vision: off", result.stdout)
 
     @unittest.skipUnless(os.name == "nt", "Windows batch execution")
     def test_generated_batch_forwards_values_and_preserves_exit_code(self):

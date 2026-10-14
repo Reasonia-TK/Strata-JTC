@@ -128,7 +128,8 @@ START-HERE.bat --setup --family swift --model IQ2_XS
 `Q2_0`、`IQ2_XS`、`IQ3_XXS`、`IQ3_S`を、`--family swift-abliterated`で追加できます。
 StrataのQwen用エンジンとネイティブパックを使い、通常のSwiftとは別のモデル設定・パックを作ります。
 PLEテーブルは先頭の分割ファイルにあります。分割をまたぐレイヤーも現在のパック処理で扱います。
-モデル本体の全量取得や推論はこのPCで未確認です。
+`IQ2_XS`は、このPCで全量取得とSHA-256検証、起動、日本語とPythonコードのAPI生成を確認済みです。
+コンテキスト2048、Visionなし、低RAMモードでの短い生成テストです。ほかの量子化での推論は未確認です。
 [容量、追加と起動の手順](../README.md#sc117版swift-15-abliteratedを追加する)を参照してください。
 
 ```powershell

@@ -6,7 +6,7 @@ cd /d "%~dp0"
 
 rem ===== 起動設定: 下の値を変更できます。詳細は docs/UV_SETUP.md。 =====
 rem MODEL: auto は最近起動したモデル。例: q2_0、glm53-ud-iq1_s。
-rem 未導入のモデルを追加するには ADD-MODEL.bat を実行してください。
+rem ADD-MODEL.bat
 if not defined STRATA_MODEL set "STRATA_MODEL=auto"
 rem VISION: keep / on / off / gpu / cpu。on には導入済みencoderが必要。GLMはkeep/off。
 if not defined STRATA_VISION set "STRATA_VISION=keep"
