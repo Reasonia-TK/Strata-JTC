@@ -59,6 +59,8 @@ import urllib.parse
 import zipfile
 from pathlib import Path
 
+from glm_models import FAMILY as GLM_FAMILY, QUANTS as GLM_QUANTS, TITLE as GLM_TITLE, is_external
+
 ROOT = Path(__file__).resolve().parent
 WIN = os.name == "nt"
 # #214: every Hugging Face file comes from a fixed commit of its repository (the `sha` of
@@ -1737,12 +1739,17 @@ def download_huggingface(url: str, dst: Path, what=None):
                 revision = "main"
                 continue
             fail(f"cannot find {what or dst.name} on {host}", network_hint() + source_hint(url))
-        except (OSError, httpx.HTTPError, HfHubHTTPError) as e:
+        except (OSError, httpx.HTTPError, HfHubHTTPError, RuntimeError) as e:
+            if isinstance(e, RuntimeError) and "client has been closed" not in str(e):
+                raise
             # Exception text can contain signed URLs or proxy credentials.
             if attempt == 4:
                 fail(f"cannot download {what or dst.name} from {host} ({type(e).__name__})",
                      network_hint() + source_hint(url))
             warn(f"download interrupted ({type(e).__name__}); retrying in 5 s ...")
+            # Hub 1.15 may close its cached client after a connect failure while
+            # an internal retry still holds it. Start this outer retry fresh.
+            configure_network()
             time.sleep(5)
     fail(f"could not finish downloading {dst.name}", network_hint())
 
@@ -4641,6 +4648,12 @@ def own_path_config(cfg: dict) -> bool:
 def choices_from_config(cfg_path: Path) -> dict:
     """The setup answers a config was written with (family, size, context, KV, images, projection, network)."""
     cfg = json.loads(cfg_path.read_text(encoding="utf-8-sig"))
+    if is_external(cfg):
+        return {"family": cfg.get("family", GLM_FAMILY), "model": cfg.get("quant"),
+                "context": int(flag_value(cfg["args"], "--ctx-size") or 2048), "kv": None,
+                "vision": "none", "esp": "off", "host": cfg.get("host"), "api_key": cfg.get("api_key"),
+                "port": cfg.get("port"), "gpu": cfg.get("gpu"), "layer_split": None,
+                "cuda": None, "vram_reserve_mib": None}
     tag = cfg_path.stem[len("strata-"):]
     own = next((f for f, d in OWN_PATH_FAMILIES.items() if tag.startswith(d["tag"])), None)
     if own is not None:                                # Qwen3.6: its own sizes; no KV / images / projection settings
@@ -4676,11 +4689,11 @@ def choices_from_config(cfg_path: Path) -> dict:
 def calibration_targets(have: list, model: str | None, family: str | None) -> list:
     """#2036: the installed configs `--calibrate --model X` (and/or --family) means; every config with neither."""
     if not (model or family):
-        return [c for c in have if choices_from_config(c)["family"] not in OWN_PATH_FAMILIES]
+        return [c for c in have if choices_from_config(c)["family"] not in (*OWN_PATH_FAMILIES, GLM_FAMILY)]
     out = []
     for c in have:
         ch = choices_from_config(c)
-        if ch["family"] in OWN_PATH_FAMILIES:          # the tuning measures Flash-Next's engine settings
+        if ch["family"] in (*OWN_PATH_FAMILIES, GLM_FAMILY):  # tuning is for the native Flash-Next engine
             continue
         if (not model or ch["model"] == model) and (not family or ch["family"] == family):
             out.append(c)
@@ -4872,6 +4885,8 @@ def upgrade_config(cfg_path: Path, cfg: dict) -> dict:
     """Configs written before v0.1.13 read prompts in fixed 2048-token chunks; the engine now picks the chunk
     itself (`--prefill auto`: up to 8192, as the free VRAM allows - about 2x faster on long prompts).  Under WSL,
     KV streaming is dropped: its RAM copy must be pinned, and the driver pins only about 1 GB there."""
+    if is_external(cfg):
+        return cfg
     a = cfg.get("args", [])
     changed = False
     ver = engine_version(cfg["exe"]) if "--prefill" in a else (0, 0, 0)
@@ -4905,11 +4920,14 @@ def update_install(have: list, a) -> int:
         say("  it finds an earlier install's model files next to it and reuses them.")
         return 0
     sync_dependencies()
-    if not a.build:
+    if not a.build and any(not is_external(json.loads(p.read_text(encoding="utf-8-sig"))) for p in have):
         update_installed_engine(a.prebuilt)
     mtp_done: set = set()
     for cfg_path in have:
         cfg = upgrade_config(cfg_path, json.loads(cfg_path.read_text(encoding="utf-8-sig")))
+        if is_external(cfg):
+            ok(f"{cfg.get('model_name', cfg_path.stem)}: llama.cpp {cfg.get('runtime_version', '')}")
+            continue
         if not own_path_config(cfg):
             refresh_shared_draft_vocab(cfg, mtp_done)
         if cfg.get("backend") == "hip" and WIN:
@@ -4952,6 +4970,14 @@ def start(cfg_path: Path, port: int | None, gpu: int | list | None = None, open_
     """keep: settings given on this start that the model keeps from now on (--host, --api-key, --draft-vocab,
     --vram-reserve-mib)."""
     cfg = upgrade_config(cfg_path, json.loads(cfg_path.read_text(encoding="utf-8-sig")))
+    if is_external(cfg):
+        from serve.llama_runtime import start as start_llama
+        saved = {k: v for k, v in (keep or {}).items() if k in ("host", "api_key", "open_browser") and v is not None}
+        if any(cfg.get(k) != v for k, v in saved.items()):
+            cfg.update(saved)
+            write_config(cfg_path, cfg)
+        cfg_path.touch()
+        return start_llama(cfg, port=port, gpu=gpu, open_browser=open_browser and cfg.get("open_browser") is not False)
     missing = [p for p in [cfg["exe"], *[a for a in cfg["args"] if a.endswith(".gguf")]] if not Path(p).exists()]
     if missing:
         fail(f"{cfg_path.name} refers to missing files: {missing[0]}", "run it again with --setup to repair")
@@ -5463,16 +5489,24 @@ def write_run_script(model, cfg_path, port, open_browser=True):
              "--port", str(port)] + (["--open"] if open_browser else [])
     if WIN:
         script = ROOT / f"run-{model.lower()}.bat"
-        text = ("@echo off\nchcp 65001 >nul\nsetlocal\nrem Edit these settings for this model; see docs/UV_SETUP.md.\n"
+        glm_settings = ('rem GLM専用: autoは保存値。GPU_LAYERS=0でCPU、CPU_MOE=onでMoEをCPUで計算。\n'
+                        'set "STRATA_GPU_LAYERS=auto"\nset "STRATA_CPU_MOE=auto"\n') if model.startswith(GLM_FAMILY + "-") else ""
+        help_line = "rem このモデルの起動設定です。docs/GLM_SETUP.md を参照。\n" if glm_settings else \
+            "rem Edit these settings for this model; see docs/UV_SETUP.md.\n"
+        text = ("@echo off\nchcp 65001 >nul\nsetlocal\n" + help_line +
                 f'set "STRATA_MODEL={cfg_path}"\n'
                 'set "STRATA_VISION=keep"\nset "STRATA_CONTEXT=auto"\n'
                 f'set "STRATA_PORT={port}"\nset "STRATA_GPU=auto"\n'
+                + glm_settings +
                 f'set "STRATA_BROWSER={"yes" if open_browser else "no"}"\n'
                 'set "STRATA_HOST=127.0.0.1"\n'
                 f'call "{ROOT / "RUN-STRATA.bat"}" %*\nexit /b %ERRORLEVEL%\n')
         script.write_bytes(text.replace("\n", "\r\n").encode("utf-8"))
     else:
         script = ROOT / f"run-{model.lower()}.sh"
+        if cfg_path.is_file() and is_external(json.loads(cfg_path.read_text(encoding="utf-8-sig"))):
+            serve = [sys.executable, str(ROOT / "tools" / "launch_strata.py"), "--model", str(cfg_path),
+                     "--port", str(port), "--browser", "yes" if open_browser else "no"]
         script.write_text("#!/bin/sh\ncd \"" + str(ROOT) + "\"\nexec " + " ".join(f'"{x}"' for x in serve) + "\n",
                           encoding="utf-8")
         script.chmod(0o755)
@@ -5784,11 +5818,18 @@ def main() -> int:
     if sys.platform == "darwin":                       # a Mac: metal/setup_mac.py (the Metal engine)
         return mac_setup(sys.argv[1:])
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--family", choices=list(FAMILIES) + list(PREVIEW_FAMILIES),
-                    help="qwen = Qwen3.8-Flash-Next, swift = Swift 1.5 (qwen36 = Qwen3.6-35B-A3B: download only, the "
-                         "engine does not run it yet)")
+    from serve.llama_runtime import gpu_layers_value
+    ap.add_argument("--family", choices=list(FAMILIES) + list(PREVIEW_FAMILIES) + [GLM_FAMILY],
+                    help="qwen = Qwen3.8-Flash-Next、swift = Swift 1.5、qwen36 = Qwen3.6-35B-A3B、"
+                         "glm53 = GLM-5.3-Flash（専用llama.cppエンジン）")
     ap.add_argument("--model", choices=list(dict.fromkeys([*MODELS, *(m for f in PREVIEW_FAMILIES.values()
-                                                                       for m in f["models"])])))
+                                                                       for m in f["models"]), *GLM_QUANTS])))
+    ap.add_argument("--llama-backend", choices=["auto", "cuda", "vulkan", "cpu"], default="auto",
+                    help="GLMの実行エンジン。Windows: CUDA/Vulkan/CPU、Linux: CPU（別ビルドは--llama-serverで指定）")
+    ap.add_argument("--llama-server", help="GLM対応版llama-serverのパス（指定すると自動取得を省略）")
+    ap.add_argument("--gpu-layers", type=gpu_layers_value, default="auto", help="GLMでGPUに割り当てるレイヤー数: auto、all、0以上の数")
+    ap.add_argument("--cpu-moe", choices=["auto", "on", "off"], default="auto",
+                    help="GLMのMoE重みをCPUで計算するか。autoはモデルがVRAMに収まらない場合に有効")
     ap.add_argument("--context", type=int)
     ap.add_argument("--rope-scaling", choices=["none", "linear", "yarn"],
                     help="the RoPE extension for a context past the model's trained 262144: linear (position "
@@ -5901,9 +5942,10 @@ def main() -> int:
                          "sycl = Intel Arc, EXPERIMENTAL: Linux, built from source (docs/INTEL_ARC.md)")
     ap.add_argument("--skip-build", action="store_true", help=argparse.SUPPRESS)
     a = ap.parse_args()
-    if a.model and a.model not in MODELS and a.family not in PREVIEW_FAMILIES:
+    if a.model and a.model not in MODELS and a.family not in (*PREVIEW_FAMILIES, GLM_FAMILY):
         ap.error(f"--model {a.model} is a size of " + ", ".join(f"--family {f}" for f, d in PREVIEW_FAMILIES.items()
-                                                              if a.model in d["models"]))
+                                                              if a.model in d["models"])
+                 + (f" --family {GLM_FAMILY}" if a.model in GLM_QUANTS else ""))
     if a.source:
         os.environ["STRATA_SOURCE"] = a.source
     if a.inspect:                                      # headers only: nothing is installed
@@ -5923,6 +5965,15 @@ def main() -> int:
             a.gpu = int(a.gpu)
         else:
             ap.error(f"--gpu takes a GPU number as nvidia-smi numbers them, e.g. --gpu 1 (or --gpus 0,2), not {a.gpu!r}")
+    if a.family == GLM_FAMILY:
+        say("Strata-jtc - GLM-5.3-Flashのセットアップ")
+        # GLM追加時に、既存のQwenや取得中のファイルの保存先を移動しない。
+        if a.models_dir is None:
+            saved = load_settings().get("data_dir")
+            data = Path(a.data_dir).expanduser().resolve() if a.data_dir else Path(saved) if saved else ROOT.parent / "Strata-data"
+            a.models_dir = str(data / "models")
+        from tools.setup_glm import install as install_glm
+        return install_glm(a)
     say("Strata - Qwen3.8-Flash-Next on a normal PC (a GPU + system RAM + CPU)")
     data, elsewhere = data_folder(a.data_dir)          # the model files: in the data folder, found from any copy
     roots = [data, *elsewhere]
@@ -5995,7 +6046,7 @@ def main() -> int:
                      keep={"host": a.host, "api_key": a.api_key, "draft_vocab": a.draft_vocab,
                            "vram_reserve_mib": a.vram_reserve_mib, "open_browser": a.browser})
     if have and not (a.setup or a.model or a.family or a.check or a.no_start):
-        if not a.build:
+        if not a.build and any(not is_external(json.loads(p.read_text(encoding="utf-8-sig"))) for p in have):
             update_installed_engine(a.prebuilt)
         if len(have) == 1:
             return start(have[0], a.port, run_gpu, yes=a.yes, layer_split=a.layer_split,
@@ -6212,11 +6263,15 @@ def main() -> int:
         for j, f in enumerate(OWN_PATH_FAMILIES, len(fams) + 1):   # families with an engine path of their own
             d = OWN_PATH_FAMILIES[f]
             say(f"  {j}) {d['title']:20s} {d['by']} - {d['about']}   [new]")
-        allf = fams + list(OWN_PATH_FAMILIES)
+        say(f"  {len(fams) + len(OWN_PATH_FAMILIES) + 1}) {GLM_TITLE} - 量子化を選択（最小約93 GB）")
+        allf = fams + list(OWN_PATH_FAMILIES) + [GLM_FAMILY]
         family = allf[int(ask("Which model?", [str(i) for i in range(1, len(allf) + 1)],
                               str(allf.index(rec_fam) + 1), a.yes)) - 1]
     if family in OWN_PATH_FAMILIES:                    # Qwen3.6: its own engine path, its own steps 2-7
         return install_own_path(a, family, gpu, hip, amd, cuda_tk, multi, port, ram, adopted)
+    if family == GLM_FAMILY:
+        from tools.setup_glm import install as install_glm
+        return install_glm(a)
     fam = FAMILIES[family]
     if fam.get("ready") and hip:
         # not a risk the user could take: the HIP engine has no NVFP4 expert kernels at all, so it would not start

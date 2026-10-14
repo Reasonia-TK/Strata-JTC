@@ -87,6 +87,29 @@ class HubDownload(unittest.TestCase):
         self.assertEqual(calls, 2)
         self.assertEqual(self.dst.read_bytes(), b"complete model")
 
+    def test_real_hub_downloader_resumes_with_http_range(self):
+        """モックしたHub関数ではなく、固定版のHTTP転送が中断位置を引き継ぐ。"""
+        self.dst.with_name(self.dst.name + ".part").write_bytes(b"complete ")
+        ranges = []
+        body = b"complete model"
+
+        def respond(request):
+            headers = {"X-Repo-Commit": "a" * 40, "ETag": '"etag"', "Content-Length": str(len(body))}
+            if request.method == "HEAD":
+                return httpx.Response(200, headers=headers)
+            ranges.append(request.headers.get("range"))
+            start = int(request.headers["range"].removeprefix("bytes=").removesuffix("-"))
+            headers.update({"Content-Length": str(len(body) - start),
+                            "Content-Range": f"bytes {start}-{len(body)-1}/{len(body)}"})
+            return httpx.Response(206, headers=headers, content=body[start:])
+
+        with httpx.Client(transport=httpx.MockTransport(respond)) as client, \
+                mock.patch("huggingface_hub.utils._http.get_session", return_value=client):
+            setup.download(self.url, self.dst)
+        self.assertEqual(ranges, ["bytes=9-"])
+        self.assertEqual(self.dst.read_bytes(), body)
+        self.assertTrue(setup.done(self.dst))
+
     def test_failure_never_marks_a_download_complete_or_logs_credentials(self):
         output = io.StringIO()
         with mock.patch("huggingface_hub.hf_hub_download",
@@ -97,6 +120,19 @@ class HubDownload(unittest.TestCase):
         self.assertNotIn("secret", output.getvalue())
         self.assertNotIn("private", output.getvalue())
         self.assertIn("SSL_CERT_FILE", output.getvalue())
+
+    def test_closed_client_after_connection_failure_is_recreated(self):
+        calls = [RuntimeError("Cannot send a request, as the client has been closed."), None]
+        def download(**kw):
+            first = calls.pop(0)
+            if first is not None:
+                raise first
+            return self.completed(**kw)
+        with mock.patch("huggingface_hub.hf_hub_download", side_effect=download), \
+                contextlib.redirect_stdout(io.StringIO()):
+            setup.download(self.url, self.dst)
+        self.assertEqual(self.dst.read_bytes(), b"complete model")
+        self.assertEqual(strata_network.configure_network.call_count, 2)
 
     def test_offline_error_does_not_switch_to_an_unpinned_revision(self):
         from huggingface_hub.errors import LocalEntryNotFoundError

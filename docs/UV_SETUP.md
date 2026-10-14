@@ -52,6 +52,8 @@ uv export --locked --format requirements-txt --no-hashes --no-emit-project --no-
 .\ADD-MODEL.bat --family swift --model IQ2_XS
 # 推奨設定を使い、質問なしで追加:
 .\ADD-MODEL.bat --family coder --yes
+# GLMを追加（量子化をメニューで選ぶ）:
+.\ADD-MODEL.bat --family glm53
 ```
 
 Linux/macOSでは`./setup.sh --setup --no-start`を実行します。
@@ -73,6 +75,8 @@ Linux/macOSでは`./setup.sh --setup --no-start`を実行します。
 | `STRATA_CONTEXT` | `auto`で保存済み設定。`32768`、`65536`、`262144`などトークン数を指定 |
 | `STRATA_PORT` | `auto`で保存済み設定。`8080`、`8081`など1〜65535の番号を指定 |
 | `STRATA_GPU` | `auto`で保存済み選択。`0`、`1`、`0,1`など |
+| `STRATA_GPU_LAYERS` | GLM専用。`auto`で保存値、`all`または0以上のレイヤー数。`0`でCPU計算 |
+| `STRATA_CPU_MOE` | GLM専用。`auto`で保存値、`on`でMoEのCPU計算、`off`でCPU固定を解除 |
 | `STRATA_BROWSER` | `auto`で保存済み設定。`yes`でブラウザーを開く、`no`で開かない |
 | `STRATA_HOST` | 通常は`127.0.0.1`。別のアドレスには`STRATA_API_KEY`または保存済みAPIキーが必要 |
 
@@ -96,6 +100,7 @@ if not defined STRATA_PORT set "STRATA_PORT=8081"
 `--dry-run`はモデルを読み込まず、適用する設定を表示します。
 まだインストールしていないモデルは先に`ADD-MODEL.bat`で導入してください。
 VisionをONにするには、そのモデルのencoderを先にセットアップする必要があります。
+GLMの導入はテキスト専用で、Visionは`keep`または`off`です。[量子化別の容量とGLMの手順](GLM_SETUP.md)を参照してください。
 未導入なら`START-HERE.bat --setup --vision yes`を実行して対象モデルを選んでください。
 GPUで動くencoderを用意していない場合は`cpu`を使います。対応するencoderはGPUとバックエンドによります。
 
@@ -140,6 +145,7 @@ uvと共通に設定する場合は`SSL_CERT_FILE`を使います。会社で許
 会社のCAの未登録や、接続先の遮断そのものを自動で解消するものではありません。
 
 HubのHTTPクライアントに同じ証明書設定を使うため、セットアップは`HF_HUB_DISABLE_XET=1`を既定にします。
+中断した大容量モデルの取得を再開できるよう、`huggingface-hub`は追記・HTTP Rangeを確認した1.15.0に固定しています。
 Xetを利用する場合は事前に`HF_HUB_DISABLE_XET=0`を指定してください。その場合はXet側の証明書と
 プロキシの設定も必要です。MTP取得は必要な範囲だけを読む方式を保ち、同じTLS設定を利用します。
 

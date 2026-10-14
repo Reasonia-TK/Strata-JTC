@@ -1,5 +1,9 @@
 # Which model? Sizes, versions and what fits
 
+> **GLM-5.3-Flashを使う場合:** Strata-jtcでは`--family glm53`で専用llama.cppエンジンを導入できます。
+> 量子化は12種類、最小のダウンロードは約93 GBです。以下のQwenの容量・速度とは別に、
+> [GLMの導入手順と量子化別の容量](GLM_SETUP.md)を確認してください。
+
 Strata runs one model, [Qwen3.8-Flash-Next](https://huggingface.co/Qwen/Qwen3.8-Flash-Next), in several **sizes**
 (the same model, compressed more or less) and several **versions** (the original, a coding version, a fine-tune).
 The installer recommends one for your PC; this page explains the choice. Back to the [README](../README.md).

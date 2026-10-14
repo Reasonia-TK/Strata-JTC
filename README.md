@@ -1,12 +1,14 @@
 <h1 align="center">Strata-jtc</h1>
 
-<p align="center"><b>1250億パラメーターのAIモデルを、自分のPCで動かす</b><br>
+<p align="center"><b>大規模なAIモデルを、自分のPCで動かす</b><br>
 NVIDIA / AMD GPUとシステムRAMを利用 · Windows / Linux · オープンソース</p>
 
 Strata-jtcは、[Strata](https://github.com/Niko1221/Strata)をもとに、ローカルPCで
 **[Qwen3.8-Flash-Next](https://huggingface.co/Qwen/Qwen3.8-Flash-Next)**とその派生モデルを動かすプロジェクトです。
 チャット、コード作成、画像の読み取り、各種アプリやコーディングエージェントとの連携に対応します。
 推論は自分のPCで行います。
+**[GLM-5.3-Flash](https://huggingface.co/unsloth/GLM-5.3-Flash-GGUF)**も、専用のllama.cppエンジンを使って
+量子化レベルを選んで追加できます（[導入手順と必要な容量](docs/GLM_SETUP.md)）。
 
 この構成では、Pythonの依存関係を**uvと`uv.lock`**で管理し、モデルを**`huggingface-hub`**で取得します。
 OSの証明書ストアと追加CAを利用できるため、会社のLANやプロキシの設定にも対応できます。
@@ -114,6 +116,9 @@ GPU、RAM、ディスク容量を確認して、PCに合ったモデルを導入
 
 # Coderを推奨設定で、質問なしで追加
 .\ADD-MODEL.bat --family coder --yes
+
+# GLM-5.3-Flashを追加（量子化をメニューで選択）
+.\ADD-MODEL.bat --family glm53
 ```
 
 追加が終わったら、導入済みのモデルを確認して起動します。
@@ -128,6 +133,31 @@ GPU、RAM、ディスク容量を確認して、PCに合ったモデルを導入
 
 Linux / Macでは`./setup.sh --setup --no-start`を実行します。
 設定を変更してそのまま起動したい場合は、Windowsでは`SETUP.bat`、Linux / Macでは`./setup.sh --setup`を使います。
+
+## GLM-5.3-Flashを追加する
+
+`ADD-MODEL.bat`のモデル選択で**GLM-5.3-Flash**を選ぶか、`--family glm53`を指定します。
+1 bitから8 bit、BF16まで12種類を選択でき、必要な分割ファイルをすべて取得します。
+最小の`UD-IQ1_S`でも**約93.09 GB**です。作者のメモリーの目安は**RAMとVRAMの合計100 GB以上**です。
+目安を下回る場合はSSDから読み込む設定にしますが、起動や速度は保証されません。
+
+```powershell
+# 最小の量子化を、コンテキスト2048・ポート8081で追加。取得後には起動しない
+.\ADD-MODEL.bat --family glm53 --model UD-IQ1_S --context 2048 --port 8081 --yes
+
+# 起動設定を確認してから起動
+.\RUN-STRATA.bat --model glm53-ud-iq1_s --port 8081 --dry-run
+.\RUN-STRATA.bat --model glm53-ud-iq1_s --port 8081
+```
+
+GLMではllama.cppのブラウザー画面とOpenAI互換APIを使います。この導入はテキスト専用です。
+Qwenの速度の測定値やVision、MTP、エキスパートキャッシュの設定をGLMへ流用できません。
+GPUへの割り当てとMoEのCPU計算もbatから変更できます。量子化別の容量、設定例、検証状況は
+[GLMの手順](docs/GLM_SETUP.md)を参照してください。
+
+このPC（Ryzen 7 7700、RAM約32 GiB、RTX 5070 Ti）では、`UD-IQ1_S`を全量取得し、
+コンテキスト1024でモデル読み込みとAPI生成を確認しました。読み込みは約20秒、短い生成の出力速度は
+約1.57トークン/秒でした。測定条件と制約は[GLMの実測結果](docs/GLM_SETUP.md#このpcでの実測2026年10月15日)を参照してください。
 
 ## 通常の起動と設定変更
 
@@ -233,6 +263,7 @@ LinuxのROCmはGPUごとのAMD配布先を利用し、uvで導入します。
 | `unsloth` | Unslothの量子化モデル | UD-IQ4_XS、UD-Q4_K_XL、UD-Q5_K_XL、UD-Q6_K_XL、Q8_0。ダウンロードは約94〜188 GB |
 | `nvfp4` | NVFP4形式のモデル | NVIDIA専用。AMD / Intel向けメニューでは表示しない |
 | `qwen36` | Qwen3.6-35B-A3B | より小さい別モデル。CUDA / HIPで利用でき、Visionは未対応 |
+| `glm53` | GLM-5.3-Flash | 専用llama.cppエンジン。12種類の量子化、最小約93 GB。テキスト専用 |
 
 Coderはコード以外や日本語を含むCJK言語で弱くなる場合があります。一般用途では全エキスパートを保持する
 Q2_0、IQ2_XS、IQ3_Sなども検討してください。モデル作者によるCoderのSWE-bench Verifiedの値は元モデルの91%です。

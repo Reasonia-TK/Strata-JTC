@@ -11,6 +11,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 import setup  # noqa: E402
+from glm_models import is_external  # noqa: E402
+from serve import llama_runtime  # noqa: E402
 from serve.launch_options import apply_overrides  # noqa: E402
 
 
@@ -52,6 +54,8 @@ def main(argv=None):
     ap.add_argument("--gpu", default="auto", help="auto, one GPU number, or numbers separated by commas")
     ap.add_argument("--browser", choices=["auto", "yes", "no"], default="auto")
     ap.add_argument("--host", default="127.0.0.1")
+    ap.add_argument("--gpu-layers", default="auto", help="GLM専用: autoで保存値、all、またはGPUレイヤー数")
+    ap.add_argument("--cpu-moe", choices=["auto", "on", "off"], default="auto", help="GLM専用: MoEのCPU計算")
     ap.add_argument("--list-models", action="store_true")
     ap.add_argument("--dry-run", action="store_true", help="show effective settings without loading a model")
     a = ap.parse_args(argv)
@@ -66,7 +70,12 @@ def main(argv=None):
     try:
         path = select_config(a.model, configs)
         cfg = json.loads(path.read_text(encoding="utf-8-sig"))
-        effective = apply_overrides(cfg, a.context, a.vision)
+        if is_external(cfg):
+            effective = llama_runtime.apply_overrides(cfg, a.context, a.vision, a.gpu_layers, a.cpu_moe)
+        else:
+            if a.gpu_layers != "auto" or a.cpu_moe != "auto":
+                raise ValueError("--gpu-layersと--cpu-moeはGLM専用です")
+            effective = apply_overrides(cfg, a.context, a.vision)
         port = a.port if a.port is not None else int(cfg.get("port", 8080))
         if not 1 <= port <= 65535:
             raise ValueError("port must be from 1 to 65535")
@@ -83,6 +92,14 @@ def main(argv=None):
     print(setup.settings_summary(effective, port), flush=True)
     encoder = effective.get("vision")
     print("Vision: " + ("on (GPU)" if encoder.get("gpu") else "on (CPU)") if encoder else "Vision: off", flush=True)
+    if is_external(cfg):
+        print("実行エンジン: llama.cpp（GLM用）", flush=True)
+        if a.dry_run:
+            llama_runtime.command(effective, port, a.host, effective.get("gpu"))
+            return 0
+        path.touch()
+        return llama_runtime.start(effective, port=port, host=a.host,
+                                   open_browser=a.browser == "yes" or (a.browser == "auto" and cfg.get("open_browser") is not False))
     if a.dry_run:
         return 0
     cmd = [sys.executable, str(ROOT / "serve" / "server.py"), "--engine", "strata", "--config", str(path),
@@ -103,3 +120,6 @@ if __name__ == "__main__":
         sys.exit(main())
     except KeyboardInterrupt:
         sys.exit(130)
+    except (OSError, ValueError) as e:
+        print(str(e), file=sys.stderr)
+        sys.exit(1)
