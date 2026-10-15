@@ -234,7 +234,7 @@ GLMでは利用できません（[対応状況と調整候補](docs/GLM_SETUP.md
 | `STRATA_PORT` | `auto`で保存済み設定。`8080`、`8081`など1〜65535のポート番号 |
 | `STRATA_GPU` | `auto`で保存済みGPU選択。`0`、`1`、`0,1`など |
 | `STRATA_BROWSER` | `auto`で保存済み設定。`yes`でブラウザーを開く、`no`で開かない |
-| `STRATA_HOST` | 通常は`127.0.0.1`。ほかのアドレスを使う場合はAPIキーが必要 |
+| `STRATA_HOST` | 通常は`127.0.0.1`。ほかのアドレスを使う場合はAPIキーが必要。[LAN接続の設定手順](#lan内の別のpcからアクセスする) |
 
 このPCのSC117版Swift IQ2_XSは、**262144トークン（256K）を既定値**として保存し、8bit KVキャッシュを使います。
 `STRATA_CONTEXT=auto`でもこの保存値を使います。`auto`はPCのRAMやVRAMからコンテキスト長を再計算する指定ではありません。
@@ -299,6 +299,7 @@ Vision OFF、コンテキスト262144、ポート8084で起動する例です。
 WindowsやStrataの保存先が異なる場合は、上のパスを実際の場所に置き換えてください。
 `--browser no`によりログオンのたびにブラウザーを開かず、`--host 127.0.0.1`によりこのPCから利用します。
 毎回同じモデルを起動するため、`--model`には導入済みタグを明示します。
+LAN内の別のPCからも利用する場合は、[APIキーの保存とタスクの変更手順](#lan内の別のpcからアクセスする)に従って変更します。
 
 保存する前に、「条件」と「設定」も確認します。
 
@@ -528,15 +529,117 @@ Q2_0はエンジン0.1.36、それ以外は0.1.26の測定です。4Kの回答�
 - **画像：** 対応する画像エンコーダーを導入し、VisionをONにして、チャットやアプリから画像を添付します。対応状況はGPUとバックエンドによって異なります。
 - **同時リクエスト：** 既定では1件ずつ処理します。複数の同時処理はモデル設定の`"parallel": 2`などで有効にできます（[同時処理の説明](docs/BATCHING.md)）。追加のVRAMを使います。
 
-別のPCやスマートフォンから利用する場合は、APIキーを設定してから公開先を変更します。
-
-```powershell
-$env:STRATA_API_KEY = "ここに十分長いAPIキーを設定"
-.\RUN-STRATA.bat --host 0.0.0.0
-```
-
+別のPCやスマートフォンから利用する場合は、次の[LAN接続の手順](#lan内の別のpcからアクセスする)でAPIキーと待ち受け先を設定します。
 ポートを変更した場合は、アプリ側のURLも同じ番号に変更してください。
 詳しくは[チャットの保存先](docs/INSTALL.md#where-things-are-stored)と[APIの説明](docs/DETAILS.md#using-it)を参照してください。
+
+## LAN内の別のPCからアクセスする
+
+以下はSC117版Swift IQ2_XSをポート8084で利用する例です。ほかのモデルでは設定ファイル名とポートを合わせてください。
+APIキーを先に設定してから、`STRATA_HOST`をLANから接続できる値に変更します。
+変更後はStrataを一度停止して起動し直します。プロセスが残った場合は[終了手順](#残った子プロセスを終了する)を使います。
+
+### APIキーを用意して保存する
+
+Strata本体にはAPIキー独自の文字数制限や必須の接頭辞はありません。ランダムな半角英数字64文字程度を使うと扱いやすくなります。
+カンマは複数のキーの区切りになるため、1つのキーには含めません。前後の空白は除去されます。
+Strataのフォルダーで次を実行すると、64文字のランダムな16進数を作れます（[Pythonのsecretsの説明](https://docs.python.org/3/library/secrets.html#secrets.token_hex)）。
+
+```powershell
+uv run --locked --no-sync python -c "import secrets; print(secrets.token_hex(32))"
+```
+
+生成したキーは自分で保管します。以降の`REPLACE_WITH_YOUR_API_KEY`は説明用の文字列なので、そのキーに置き換えてください。
+キー自体をREADMEやGitHubに掲載しないでください。
+
+毎回の起動や自動起動タスクで使うには、`strata-swift-abliterated-iq2_xs.json`のトップレベルに`api_key`を追加します。
+下は追加する項目だけの例です。既存の`exe`、`args`などを残し、JSONの項目間をカンマで区切ってください。
+
+```json
+{
+  "api_key": "REPLACE_WITH_YOUR_API_KEY"
+}
+```
+
+このリポジトリーでは`strata-*.json`はGit管理対象外です。環境変数`STRATA_API_KEY`が設定されている場合は、JSONよりそちらを優先します。
+保存せず今回の起動だけで使う場合は、同じPowerShellで次のように指定する方法もあります。
+
+```powershell
+$env:STRATA_API_KEY = 'REPLACE_WITH_YOUR_API_KEY'
+$env:STRATA_HOST = '0.0.0.0'
+.\RUN-STRATA.bat --model swift-abliterated-iq2_xs --port 8084
+```
+
+### STRATA_HOSTを書き換える
+
+| 値 | 接続できる範囲 |
+| --- | --- |
+| `127.0.0.1` | Strataを動かしているPCだけ |
+| `0.0.0.0` | すべてのIPv4インターフェースで待ち受ける。ほかのPCからの接続にはファイアウォールの許可も必要 |
+
+`RUN-STRATA.bat`を直接使う場合は、先頭の設定欄にある既存の`STRATA_HOST`行を次のように書き換えます。
+先にモデルJSONの`api_key`を保存しておいてください。
+
+```bat
+if not defined STRATA_HOST set "STRATA_HOST=0.0.0.0"
+```
+
+`run-swift-abliterated-iq2_xs.bat`を使う場合は、そのファイルの既存の`STRATA_HOST`行を書き換えます。
+モデル別batは独自に`STRATA_HOST`を設定するため、普段使うbat側の値も合わせてください。
+
+```bat
+set "STRATA_HOST=0.0.0.0"
+```
+
+優先順は、コマンドラインの`--host`、呼び出し元のbatやPowerShellで設定した環境変数、`RUN-STRATA.bat`の既定値です。
+既存の環境変数がある場合は、その値も確認してください。適用する設定は、モデルを読み込まずに確認できます。
+
+```powershell
+.\RUN-STRATA.bat --model swift-abliterated-iq2_xs --port 8084 --dry-run
+```
+
+表示が`server 0.0.0.0:8084`になっていれば待ち受け先の指定が反映されています。`--dry-run`を外すと起動します。
+
+### 登録済みの自動起動タスクも変更する
+
+タスクスケジューラで「Strata 自動起動」の「プロパティ」→「操作」→「編集」を開き、
+「引数の追加」の`--host 127.0.0.1`を`--host 0.0.0.0`へ変更します。現在のSC117版Swift IQ2_XS用の例は次のとおりです。
+
+```text
+/d /s /c ""C:\Works\20261014_Strata\RUN-STRATA.bat" --model swift-abliterated-iq2_xs --vision off --context 262144 --port 8084 --browser no --host 0.0.0.0"
+```
+
+タスクの`--host`はbatの`STRATA_HOST`より優先されます。batだけを書き換えても、タスクの引数が`127.0.0.1`ならLANには公開されません。
+APIキーは上記のモデルJSONに保存しておきます。PowerShellで一時設定した環境変数は、タスクからの起動には引き継がれません。
+実行中のStrataを停止してから、タスクを右クリックして「実行」し、設定を反映します。
+
+### 接続先とファイアウォールを確認する
+
+Strataを動かすPCで`ipconfig`を実行し、利用中のEthernetまたはWi-FiのIPv4アドレスを確認します。
+例えば`192.168.1.10`なら、別のPCの接続設定は次のとおりです。このIPは説明用なので実際の値に置き換えます。
+
+| 接続方法 | 設定する値 |
+| --- | --- |
+| ブラウザー | `http://192.168.1.10:8084`を開き、求められたらAPIキーを入力 |
+| OpenAI互換アプリの接続先 | `http://192.168.1.10:8084/v1` |
+| アプリのAPIキー欄 | Strataに設定したものと同じAPIキー |
+| APIのHTTPヘッダー | `Authorization: Bearer REPLACE_WITH_YOUR_API_KEY`。`x-api-key`でも指定可能 |
+
+`0.0.0.0`はサーバーの待ち受け指定です。接続する側のURLには、Strataを動かすPCのLAN側IPアドレスを使います。
+APIキーが未指定または異なる場合、`/v1/models`などのAPIはHTTP 401を返します。
+
+Windowsファイアウォールで受信が許可されていない場合は、Strataを動かすPCの**管理者PowerShell**で次を実行します。
+この例は「プライベート」プロファイルの同一サブネットから、TCP 8084への接続を許可するルールです。
+
+```powershell
+New-NetFirewallRule -Name 'Strata-LAN-8084' -DisplayName 'Strata LAN 8084' -Direction Inbound -Protocol TCP -LocalPort 8084 -Action Allow -Profile Private -RemoteAddress LocalSubnet
+```
+
+ネットワークプロファイルと許可するポートが実際の構成に合っていることを確認してください。
+ルールの指定方法は[Microsoftの説明](https://learn.microsoft.com/ja-jp/powershell/module/netsecurity/new-netfirewallrule)も参照できます。
+
+このPCだけで使う状態に戻すには、batとタスクの`--host`を`127.0.0.1`に戻してStrataを再起動します。
+この例で追加した受信ルールも不要なら、管理者PowerShellで`Remove-NetFirewallRule -Name 'Strata-LAN-8084'`を実行します。
 
 <a id="optional-more-speed-on-one-card-when-the-whole-model-fits-in-ram"></a>
 

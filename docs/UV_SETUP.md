@@ -78,7 +78,7 @@ Linux/macOSでは`./setup.sh --setup --no-start`を実行します。
 | `STRATA_GPU_LAYERS` | GLM専用。`auto`で保存値、`all`または0以上のレイヤー数。`0`でCPU計算 |
 | `STRATA_CPU_MOE` | GLM専用。`auto`で保存値、`on`でMoEのCPU計算、`off`でCPU固定を解除 |
 | `STRATA_BROWSER` | `auto`で保存済み設定。`yes`でブラウザーを開く、`no`で開かない |
-| `STRATA_HOST` | 通常は`127.0.0.1`。別のアドレスには`STRATA_API_KEY`または保存済みAPIキーが必要 |
+| `STRATA_HOST` | 通常は`127.0.0.1`。別のアドレスには`STRATA_API_KEY`または保存済みAPIキーが必要。[APIキーとLAN接続の手順](../README.md#lan内の別のpcからアクセスする) |
 
 `STRATA_CONTEXT=auto`は保存済みのコンテキスト長を使い、PC構成から上限を探す処理は行いません。
 このPCのSC117版Swift IQ2_XSは保存値を262144トークン、KVキャッシュを8bitに設定しているため、
