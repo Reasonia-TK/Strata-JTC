@@ -80,6 +80,10 @@ Linux/macOSでは`./setup.sh --setup --no-start`を実行します。
 | `STRATA_BROWSER` | `auto`で保存済み設定。`yes`でブラウザーを開く、`no`で開かない |
 | `STRATA_HOST` | 通常は`127.0.0.1`。別のアドレスには`STRATA_API_KEY`または保存済みAPIキーが必要 |
 
+`STRATA_CONTEXT=auto`は保存済みのコンテキスト長を使い、PC構成から上限を探す処理は行いません。
+このPCのSC117版Swift IQ2_XSは保存値を262144トークン、KVキャッシュを8bitに設定しているため、
+`auto`でも262144になります。ログオン時の起動と子プロセスの停止は[READMEの手順](../README.md#windowsタスクスケジューラで自動起動する)を参照してください。
+
 画像を無効にし、コンテキスト65536、ポート8081で起動する設定例:
 
 ```bat

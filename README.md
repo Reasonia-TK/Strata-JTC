@@ -148,7 +148,7 @@ Swift 1.5に拒否方向を除去する調整を加えた派生モデルです�
 .\ADD-MODEL.bat --family swift-abliterated
 
 # IQ2_XSを指定して追加し、完了後に起動
-.\ADD-MODEL.bat --family swift-abliterated --model IQ2_XS
+.\ADD-MODEL.bat --family swift-abliterated --model IQ2_XS --context 262144 --kv int8
 .\RUN-STRATA.bat --model swift-abliterated-iq2_xs
 ```
 
@@ -185,9 +185,14 @@ GBは10億バイトで、各量子化の2分割ファイルの合計です。実
 | 空きRAM | テスト中に取得したサンプルの最小値は1.75 GiB |
 
 `RUN-STRATA.bat`から起動し、`temperature: 0`、`reasoning_effort: none`で短い生成を2件確認した結果です。
-パック作成直後の測定で、ほかのアプリの負荷は固定していません。長文、長いコンテキスト、Vision、
+パック作成直後の測定で、ほかのアプリの負荷は固定していません。長文入力、Vision、
 ほかの量子化は未検証です。`--calibrate`は実行していません。
 検証後はサーバーを停止し、モデル、起動設定と`run-swift-abliterated-iq2_xs.bat`を残しています。
+
+その後、既定のコンテキスト長を**262144トークン**、KVキャッシュを`int8`に変更しました。
+同じPCでログオンタスクからの手動起動を行い、ヘルスチェックの`max_context: 262144`とVision OFF、
+短い生成（「1 + 1」への回答`2`、HTTP 200）を確認しています。20万トークン以上の実入力での動作や精度は未検証です。
+[子プロセスの終了手順](#残った子プロセスを終了する)でサーバーとエンジンが終了し、ポート8084の待ち受けがなくなることも確認しました。
 
 ## GLM-5.3-Flashを追加する
 
@@ -231,6 +236,10 @@ GLMでは利用できません（[対応状況と調整候補](docs/GLM_SETUP.md
 | `STRATA_BROWSER` | `auto`で保存済み設定。`yes`でブラウザーを開く、`no`で開かない |
 | `STRATA_HOST` | 通常は`127.0.0.1`。ほかのアドレスを使う場合はAPIキーが必要 |
 
+このPCのSC117版Swift IQ2_XSは、**262144トークン（256K）を既定値**として保存し、8bit KVキャッシュを使います。
+`STRATA_CONTEXT=auto`でもこの保存値を使います。`auto`はPCのRAMやVRAMからコンテキスト長を再計算する指定ではありません。
+ログオン時の自動起動タスクも262144を指定しています。
+
 例えば、画像をOFFにして、コンテキスト65536、ポート8081で起動する設定は次のとおりです。
 
 ```bat
@@ -252,7 +261,8 @@ VisionをONにするには、そのモデルの画像エンコーダーを先に
 コンテキストを大きく増やすと必要なメモリーも増えるため、RAM / VRAMやKVの設定も調整したい場合は`SETUP.bat`を使います。
 詳しくは[起動設定の手順](docs/UV_SETUP.md#セットアップ後の起動)を参照してください。
 
-停止するには起動したウィンドウを閉じます。`START-HERE.bat`から導入済みモデルを起動する方法も引き続き利用できます。
+停止するには起動したウィンドウを閉じます。プロセスが残った場合は[子プロセスを終了する手順](#残った子プロセスを終了する)を使います。
+`START-HERE.bat`から導入済みモデルを起動する方法も引き続き利用できます。
 
 ## Windowsタスクスケジューラで自動起動する
 
@@ -261,9 +271,10 @@ Windowsへのログオン時に、導入済みのモデルを自動起動でき�
 この手順ではログオン後に起動ウィンドウが表示され、サインアウトすると終了します。
 
 以下は保存先が`C:\Works\20261014_Strata`で、導入済みのSC117版Swift IQ2_XSを、
-Vision OFF、コンテキスト2048、ポート8084で起動する例です。
+Vision OFF、コンテキスト262144、ポート8084で起動する例です。
 モデルは`swift-abliterated-iq2_xs`を`iq2_xs`や`glm53-ud-iq1_s`などの導入済みタグに置き換えられます。
-モデル、コンテキスト長、ポートなどは[通常の起動と設定変更](#通常の起動と設定変更)に合わせて変更してください。
+別のモデルを登録する場合は、コンテキスト長とポートも、そのモデルで動作確認した値に変更してください。
+指定方法は[通常の起動と設定変更](#通常の起動と設定変更)を参照してください。
 
 ### タスクを登録する
 
@@ -281,7 +292,7 @@ Vision OFF、コンテキスト2048、ポート8084で起動する例です。
 | 開始（オプション） | `C:\Works\20261014_Strata` |
 
 ```text
-/d /s /c ""C:\Works\20261014_Strata\RUN-STRATA.bat" --model swift-abliterated-iq2_xs --vision off --context 2048 --port 8084 --browser no --host 127.0.0.1"
+/d /s /c ""C:\Works\20261014_Strata\RUN-STRATA.bat" --model swift-abliterated-iq2_xs --vision off --context 262144 --port 8084 --browser no --host 127.0.0.1"
 ```
 
 引数は最初と最後の引用符も含めて入力します。「開始」には引用符を付けません。
@@ -316,6 +327,58 @@ Strataを停止するには起動したウィンドウを閉じます。次回�
 タスクを右クリックして「無効」を選びます。登録を取り消す場合は「削除」を選びます。
 無効化や削除をした時点でStrataが動いている場合は、起動ウィンドウも閉じて停止してください。
 モデル、コンテキスト長、ポートなどを後から変えるには、タスクの「プロパティ」→「操作」→「編集」で引数を変更します。
+
+### 残った子プロセスを終了する
+
+このPCでは、タスクスケジューラの「終了」を選んでも、Pythonサーバーと`strata.exe`が残ることを確認しました。
+タスクの状態が「準備完了」でも、サーバーが停止したとは限りません。起動ウィンドウを閉じても応答が続く場合は、
+次の手順で対象モデルのサーバーと、その子プロセスを終了します。
+
+以下はSC117版Swift IQ2_XS用です。セットアップしたユーザーでPowerShellを開き、
+保存先が異なる場合は`$strataFolder`を実際のフォルダーに置き換えてください。
+
+1. タスクがまだ実行中なら、タスクスケジューラで「Strata 自動起動」を選んで「終了」します。
+2. 次のコードで対象のサーバーを表示し、`CommandLine`に対象フォルダーの`serve\server.py`と
+   `strata-swift-abliterated-iq2_xs.json`が含まれていることを確認します。モデルの読み込み中でも調べられます。
+
+```powershell
+$strataFolder = 'C:\Works\20261014_Strata'
+$strataServerScript = Join-Path $strataFolder 'serve\server.py'
+$strataConfig = Join-Path $strataFolder 'strata-swift-abliterated-iq2_xs.json'
+$strataServers = @(Get-CimInstance Win32_Process -Filter "Name = 'python.exe'" |
+    Where-Object {
+        $strataCommand = [string]$_.CommandLine
+        $strataCommand.IndexOf($strataServerScript, [StringComparison]::OrdinalIgnoreCase) -ge 0 -and
+        $strataCommand.IndexOf($strataConfig, [StringComparison]::OrdinalIgnoreCase) -ge 0
+    })
+$strataServers | Format-List ProcessId, ParentProcessId, CommandLine
+```
+
+3. 同じPowerShellで次を実行します。対象のPIDと作成時刻を再確認し、Pythonサーバーの親側から子プロセスごと終了します。
+   一覧が空なら終了対象はありません。
+
+```powershell
+$strataServerIds = @($strataServers.ProcessId)
+$strataServerRoots = @($strataServers | Where-Object { $_.ParentProcessId -notin $strataServerIds })
+foreach ($strataProc in $strataServerRoots) {
+    $strataCurrent = Get-CimInstance Win32_Process -Filter "ProcessId = $($strataProc.ProcessId)"
+    if ($strataCurrent -and $strataCurrent.CreationDate -eq $strataProc.CreationDate) {
+        taskkill /PID $strataProc.ProcessId /T /F
+    }
+}
+```
+
+`/T`で指定したプロセスとその子プロセスを、`/F`で強制終了します。生成中のリクエストも終了します
+（[Microsoftのtaskkillの説明](https://learn.microsoft.com/ja-jp/windows-server/administration/windows-commands/taskkill)）。
+
+4. 数秒待って、ポートの待ち受けがなくなったことを確認します。ポートを変更した場合は数字も合わせます。
+
+```powershell
+Get-NetTCPConnection -LocalPort 8084 -State Listen -ErrorAction SilentlyContinue
+```
+
+何も表示されず、Web画面にも接続できなければ停止済みです。手動起動のウィンドウが残っている場合は閉じてください。
+タスクを有効のままにしておくと、次のログオンで再び起動します。以降も停止したままにする場合はタスクを「無効」にします。
 
 ## Qwenモデルを自動調整する
 
